@@ -1,4 +1,4 @@
-import type { Ring, Shape, Vec2 } from './types.js';
+import type { Ring, Shape, Vec2 } from './types';
 
 const TAU = 2 * Math.PI;
 

@@ -1,8 +1,8 @@
-import type { ArcSample, Ring, Vec2 } from './types.js';
-import { add, dot, length, normalize, scale, sub } from './vec.js';
+import type { ArcSample, Ring, Vec2 } from './types';
+import { add, dot, length, normalize, scale, sub } from './vec';
 
-export { ringSignedArea } from './tessellate.js';
-import { ringSignedArea } from './tessellate.js';
+export { ringSignedArea } from './tessellate';
+import { ringSignedArea } from './tessellate';
 
 export function ringPerimeter(ring: Ring): number {
   let p = 0;

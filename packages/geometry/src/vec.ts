@@ -1,4 +1,4 @@
-import type { Vec2 } from './types.js';
+import type { Vec2 } from './types';
 
 export const vec = (x: number, y: number): Vec2 => ({ x, y });
 

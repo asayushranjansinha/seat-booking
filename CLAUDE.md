@@ -58,3 +58,23 @@ Rules:
 
 Deferred from M1 deliberately: bezier `PATH` shapes. The four concrete shapes ship behind
 the same `tessellate` seam so paths slot in later without touching downstream code.
+
+## The canvas is plain three.js, not react-three-fiber
+
+The build plan specified R3F. It produced **zero draw calls** in this stack, verified
+against Next 15 and 16, React 19.2.8 and 19.3.0, Turbopack and webpack, with a single
+`react` and a single `three` resolved through workspace `overrides`. Plain three.js
+rendered correctly in the same slot in the same page, so the renderer is imperative and
+driven from the zustand store.
+
+Two consequences worth knowing before touching `apps/web/src/canvas`:
+
+- **Refresh `matrixWorld` before raycasting.** three.js updates world matrices during
+  render, so a graph rebuilt since the last frame still carries identity matrices and
+  every room hit-tests as if it sat at the origin. `graph.updateMatrixWorld(true)` runs
+  before every pick.
+- **Pick the most specific entity, not the nearest.** A seat sits on a table that sits in
+  a room and all three are under the cursor; depth order is a fragile way to choose.
+
+`overrides` in the root package.json pin one `react` and one `three` for the whole
+workspace. R3F-adjacent packages pull their own copies otherwise.

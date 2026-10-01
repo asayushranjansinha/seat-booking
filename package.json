@@ -11,5 +11,10 @@
     "dev": "npm run dev --workspace apps/web",
     "fixtures:gen": "python3 tools/oracle/gen_fixtures.py",
     "fixtures:verify": "python3 tools/oracle/verify_oracle.py"
+  },
+  "overrides": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "three": "0.186.1"
   }
 }

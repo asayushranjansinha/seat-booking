@@ -26,9 +26,9 @@ import {
   segmentCountForArc,
   shapeFromJson,
   tessellate,
-} from '../src/index.js';
-import type { ShapeJson } from '../src/codec.js';
-import type { PlaceSeatsRequest, Ring, Transform, Vec2 } from '../src/types.js';
+} from '../src/index';
+import type { ShapeJson } from '../src/codec';
+import type { PlaceSeatsRequest, Ring, Transform, Vec2 } from '../src/types';
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), '../../geometry-fixtures/fixtures');
 const TOL = 1e-6;

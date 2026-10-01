@@ -1,5 +1,5 @@
-import type { Ring, Vec2 } from './types.js';
-import { add, dot, length, outwardNormal, scale, sub } from './vec.js';
+import type { Ring, Vec2 } from './types';
+import { add, dot, length, outwardNormal, scale, sub } from './vec';
 
 export const MITER_LIMIT = 4;
 

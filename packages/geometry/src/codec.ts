@@ -6,7 +6,7 @@
  * side. In the domain model a point is a `Vec2` object, which is far more readable in the
  * geometry code. The conversion is explicit and lives only here.
  */
-import type { Ring, Shape, Vec2 } from './types.js';
+import type { Ring, Shape, Vec2 } from './types';
 
 export type Vec2Json = readonly [number, number];
 

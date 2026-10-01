@@ -13,8 +13,8 @@ import {
   projectToArcLength,
   ringPerimeter,
   tessellate,
-} from '../src/index.js';
-import type { Shape } from '../src/types.js';
+} from '../src/index';
+import type { Shape } from '../src/types';
 
 const TOL = 1e-3;
 const CLEARANCE = 0.5;

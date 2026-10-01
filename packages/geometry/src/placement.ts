@@ -1,8 +1,8 @@
-import { offsetRing } from './offset.js';
-import { pointAtArcLength, projectToArcLength, ringPerimeter } from './ring.js';
-import { tessellate } from './tessellate.js';
-import type { PlaceSeatsRequest, Ring, SeatPlacement, Vec2 } from './types.js';
-import { add, normalize, outwardNormal, scale, sub } from './vec.js';
+import { offsetRing } from './offset';
+import { pointAtArcLength, projectToArcLength, ringPerimeter } from './ring';
+import { tessellate } from './tessellate';
+import type { PlaceSeatsRequest, Ring, SeatPlacement, Vec2 } from './types';
+import { add, normalize, outwardNormal, scale, sub } from './vec';
 
 const TAU = 2 * Math.PI;
 const DEFAULT_TOLERANCE = 1e-3;

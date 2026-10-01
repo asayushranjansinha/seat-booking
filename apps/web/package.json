@@ -1,0 +1,33 @@
+{
+  "name": "@seat-booking/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@seat-booking/geometry": "*",
+    "next": "15.5.27",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zustand": "5.0.15",
+    "zundo": "2.3.0",
+    "@tanstack/react-query": "5.104.0",
+    "three": "0.186.1",
+    "@react-three/fiber": "9.8.1",
+    "@react-three/drei": "10.7.9",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/three": "^0.186.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

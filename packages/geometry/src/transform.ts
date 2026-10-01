@@ -1,4 +1,4 @@
-import type { Transform, Vec2 } from './types.js';
+import type { Transform, Vec2 } from './types';
 
 /**
  * Compose a child's local transform with its parent's. This is the whole trick: a seat

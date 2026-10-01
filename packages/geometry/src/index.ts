@@ -1,16 +1,16 @@
-export * from './types.js';
-export * from './vec.js';
-export { segmentCountForArc, tessellate, ringSignedArea } from './tessellate.js';
-export { composeTransform, applyTransform, invertTransform, composeChain } from './transform.js';
+export * from './types';
+export * from './vec';
+export { segmentCountForArc, tessellate, ringSignedArea } from './tessellate';
+export { composeTransform, applyTransform, invertTransform, composeChain } from './transform';
 export {
   ringPerimeter,
   ringCentroid,
   pointInRing,
   pointAtArcLength,
   projectToArcLength,
-} from './ring.js';
-export { offsetRing, MITER_LIMIT } from './offset.js';
-export { placeSeats } from './placement.js';
+} from './ring';
+export { offsetRing, MITER_LIMIT } from './offset';
+export { placeSeats } from './placement';
 export {
   vec2FromJson,
   vec2ToJson,
@@ -18,5 +18,5 @@ export {
   ringToJson,
   shapeFromJson,
   shapeToJson,
-} from './codec.js';
-export type { Vec2Json, ShapeJson } from './codec.js';
+} from './codec';
+export type { Vec2Json, ShapeJson } from './codec';
