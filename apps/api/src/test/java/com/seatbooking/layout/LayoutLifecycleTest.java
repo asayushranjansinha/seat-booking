@@ -54,6 +54,22 @@ class LayoutLifecycleTest {
         return users.findByEmailIgnoreCase("admin@demo.test").orElseThrow().getId();
     }
 
+    /**
+     * A draft cloned from the published version, with any pre-existing draft discarded
+     * first.
+     *
+     * <p>createDraft deliberately returns an existing draft rather than silently throwing
+     * away an admin's work, so a test that just calls it inherits whatever half-finished
+     * layout happens to be lying around. These tests assert against the PUBLISHED layout,
+     * so they have to start from a clone of it.
+     */
+    private SceneDto freshDraft(Floor floor) {
+        versions.findByFloorIdAndStatus(floor.getId(), PlanStatus.DRAFT)
+                .ifPresent(existing -> jdbc.sql("DELETE FROM floor_plan_version WHERE id = :id")
+                        .param("id", existing.getId()).update());
+        return layouts.createDraft(floor.getId(), floor.getOrganizationId(), adminId());
+    }
+
     private UUID publishedVersionId(UUID floorId) {
         return versions.findByFloorIdAndStatus(floorId, PlanStatus.PUBLISHED).orElseThrow().getId();
     }
@@ -101,7 +117,7 @@ class LayoutLifecycleTest {
                 seats.findByPlanVersionId(publishedId).stream().map(com.seatbooking.domain.Seat::getId).toList();
         assertFalse(publishedSeatIdsBefore.isEmpty());
 
-        SceneDto draft = layouts.createDraft(floor.getId(), floor.getOrganizationId(), adminId());
+        SceneDto draft = freshDraft(floor);
 
         // The published version must still have every seat it started with. Reusing the
         // client-supplied ids used to make save() merge onto these very rows and move
@@ -132,7 +148,7 @@ class LayoutLifecycleTest {
     @DisplayName("a stale If-Match is refused rather than silently overwriting another admin")
     void staleRevisionIsRefused() {
         Floor floor = demoFloor();
-        SceneDto draft = layouts.createDraft(floor.getId(), floor.getOrganizationId(), adminId());
+        SceneDto draft = freshDraft(floor);
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> layouts.saveScene(draft.planVersionId(), draft, draft.revision() + 99));
         assertEquals(412, e.getStatusCode().value());
@@ -148,7 +164,7 @@ class LayoutLifecycleTest {
 
         UUID bookingId = bookSeat(bookedSeat);
 
-        SceneDto draft = layouts.createDraft(floor.getId(), floor.getOrganizationId(), adminId());
+        SceneDto draft = freshDraft(floor);
         SceneDto without = new SceneDto(draft.planVersionId(), draft.floorId(), draft.status(),
                 draft.revision(), draft.rooms(), draft.furniture(),
                 draft.seats().stream().filter(s -> !"A3".equals(s.code())).toList());
@@ -176,7 +192,7 @@ class LayoutLifecycleTest {
                 .filter(s -> "C1".equals(s.getCode())).findFirst().orElseThrow().getId();
         UUID bookingId = bookSeat(oldSeatId);
 
-        SceneDto draft = layouts.createDraft(floor.getId(), floor.getOrganizationId(), adminId());
+        SceneDto draft = freshDraft(floor);
         LayoutService.PublishResult result = layouts.publish(draft.planVersionId());
         assertTrue(result.published(), "an unchanged clone must publish cleanly");
 

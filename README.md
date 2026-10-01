@@ -1,0 +1,68 @@
+# Parametric Seat Booking
+
+A co-working platform where the admin draws the building itself — arbitrary rooms, tables
+and seats — and the seats behave parametrically rather than as frozen coordinates.
+
+The requirement that shapes the whole system is this one: **place a seat at an angle, and
+the nearby seats move in the same proportion.** Every element therefore stores a transform
+local to its parent, and a seat's world position is composed down the chain. Rotating a
+table changes one matrix and every seat follows; no seat record is rewritten, so nothing
+can drift out of alignment.
+
+## Running it
+
+```bash
+docker compose up -d                  # postgres 17, redis, mailpit
+cd apps/api && mvn spring-boot:run    # :8080, Flyway migrates and seeds a demo floor
+cd apps/web && npm run dev            # :3000
+```
+
+Sign in at http://localhost:3000 as `admin@demo.test` / `password`
+(`manager@demo.test` and `user@demo.test` exist with the same password).
+
+## Tests
+
+```bash
+npm test --workspaces     # geometry fixtures + behaviour, editor history
+cd apps/api && mvn test   # the same fixtures, plus schema and lifecycle tests
+./tools/mutation-check.sh # proves the cross-language fixtures can actually fail
+```
+
+## Layout
+
+```
+seat-booking/
+├─ docker-compose.yml           postgres · redis · mailpit
+├─ tools/oracle/                independent reference implementation, generates fixtures
+├─ packages/
+│  ├─ geometry-fixtures/        the shared spec: 70 golden cases
+│  └─ geometry/                 the TypeScript engine
+└─ apps/
+   ├─ api/                      Spring Boot 4.1.1 · Java 21 · the Java engine
+   └─ web/                      Next.js 15 · the layout editor
+```
+
+## What is built
+
+| Milestone | State |
+| --- | --- |
+| **M1a** geometry engines, fixture-locked in both languages | done |
+| **M1b** schema, auth, layout API, validation, publish | done |
+| **M1c** layout editor | core loop working; see below |
+| **M2** booking | not started (schema and constraints are already in place) |
+| **M3** meetings & email | not started (tables and outbox exist) |
+| **M4** hardening | not started |
+
+M1c covers: rendering rooms, tables, seats, gates and partitions; select and drag with
+grid and angle snapping; the parametric seat rules with live redistribution; per-seat
+pinning; undo/redo; the 2D⇄3D toggle; the validation overlay; and the draft/publish flow.
+Not yet built: the polygon pen, drawing gates and partitions by hand, rotate/resize
+handles on the canvas (both are editable in the properties panel), and autosave.
+
+## Two things worth reading before changing anything
+
+`packages/geometry-fixtures/README.md` is the specification for the geometry engine and
+explains why arc segment counts are derived using only `+ - * /` and `sqrt`.
+
+`CLAUDE.md` records the conventions, and why the canvas is plain three.js rather than
+react-three-fiber.
