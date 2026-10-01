@@ -19,6 +19,22 @@ CW_SQUARE  = {"kind": "POLYGON", "points": [[-1.0, -1.0], [-1.0, 1.0],
                                             [1.0, 1.0], [1.0, -1.0]]}   # wound CW on purpose
 SPIKE      = {"kind": "POLYGON", "points": [[-1.0, 0.0], [1.0, 0.0], [0.0, 0.08]]}  # bevels
 
+def wedge(apex_degrees):
+    """Isoceles triangle whose apex has exactly the given interior angle.
+
+    The miter limit bevels any corner sharper than 2*asin(1/limit): 28.96 degrees at
+    limit 4, 38.94 degrees at limit 3. Wedges either side of that band are what pin the
+    limit itself, so that changing the constant in one language fails CI rather than
+    silently desynchronising the two engines. (A mutation test found this gap: with only
+    the shapes above, a 4 -> 3 change passed every fixture.)
+    """
+    w = math.tan(math.radians(apex_degrees) / 2.0)
+    return {"kind": "POLYGON", "points": [[0.0, 1.0], [-w, 0.0], [w, 0.0]]}
+
+WEDGE_25 = wedge(25.0)   # bevels at limit 3 AND limit 4
+WEDGE_34 = wedge(34.0)   # miters at limit 4, bevels at limit 3  <- the discriminating case
+WEDGE_45 = wedge(45.0)   # miters at limit 3 AND limit 4
+
 def ring_json(ring):
     return [[p[0], p[1]] for p in ring]
 
@@ -124,6 +140,9 @@ for nm, sh, d in [("rect 2x1 by 0.5 (pure miter)", RECT_2x1, 0.5),
                   ("triangle by 0.3", TRIANGLE, 0.3),
                   ("L-shape by 0.25 (has a reflex corner)", L_SHAPE, 0.25),
                   ("thin spike by 0.2 (exceeds miter limit -> bevels)", SPIKE, 0.2),
+                  ("25 deg wedge by 0.2 (bevels at miter limit 3 and 4)", WEDGE_25, 0.2),
+                  ("34 deg wedge by 0.2 (miters at limit 4, bevels at limit 3)", WEDGE_34, 0.2),
+                  ("45 deg wedge by 0.2 (miters at limit 3 and 4)", WEDGE_45, 0.2),
                   ("circle r=0.75 by 0.4", CIRCLE_075, 0.4)]:
     ring = o.tessellate(sh, TOL)
     cases.append({"name": nm, "input": {"ring": ring_json(ring), "distance": d},
@@ -152,6 +171,8 @@ reqs = [
     ("EDGE_COUNTS rect named sides", {"shape": RECT_2x1, "clearance": 0.5,
         "rule": {"kind": "EDGE_COUNTS",
                  "counts": {"top": 3, "bottom": 3, "left": 1, "right": 1}}, "tolerance": TOL}),
+    ("PERIMETER_EVEN 34 deg wedge n=7 (sharp apex)", {"shape": WEDGE_34, "clearance": 0.25,
+        "rule": {"kind": "PERIMETER_EVEN", "count": 7}, "tolerance": TOL}),
     ("EDGE_COUNTS triangle numeric indices", {"shape": TRIANGLE, "clearance": 0.3,
         "rule": {"kind": "EDGE_COUNTS", "counts": {"0": 2, "1": 1, "2": 1}}, "tolerance": TOL}),
     ("RADIAL circle n=6", {"shape": CIRCLE_075, "clearance": 0.4,
