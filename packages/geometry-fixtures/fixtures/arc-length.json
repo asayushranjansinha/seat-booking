@@ -1,0 +1,389 @@
+{
+  "fn": "pointAtArcLength",
+  "generatedBy": "tools/oracle/oracle.py",
+  "tessellationTolerance": 0.001,
+  "compareTolerance": 1e-06,
+  "cases": [
+    {
+      "name": "offset rect 3x2 (P=10) at s=0",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 0.0
+      },
+      "expected": {
+        "point": [
+          -1.5,
+          -1.0
+        ],
+        "tangent": [
+          1.0,
+          0.0
+        ],
+        "outwardNormal": [
+          0.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=1.25",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 1.25
+      },
+      "expected": {
+        "point": [
+          -0.25,
+          -1.0
+        ],
+        "tangent": [
+          1.0,
+          0.0
+        ],
+        "outwardNormal": [
+          0.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=2.5",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 2.5
+      },
+      "expected": {
+        "point": [
+          1.0,
+          -1.0
+        ],
+        "tangent": [
+          1.0,
+          0.0
+        ],
+        "outwardNormal": [
+          0.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=3.75",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 3.75
+      },
+      "expected": {
+        "point": [
+          1.5,
+          -0.25
+        ],
+        "tangent": [
+          0.0,
+          1.0
+        ],
+        "outwardNormal": [
+          1.0,
+          -0.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=5",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 5.0
+      },
+      "expected": {
+        "point": [
+          1.5,
+          1.0
+        ],
+        "tangent": [
+          0.0,
+          1.0
+        ],
+        "outwardNormal": [
+          1.0,
+          -0.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=7.5",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 7.5
+      },
+      "expected": {
+        "point": [
+          -1.0,
+          1.0
+        ],
+        "tangent": [
+          -1.0,
+          0.0
+        ],
+        "outwardNormal": [
+          0.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=9.99",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 9.99
+      },
+      "expected": {
+        "point": [
+          -1.5,
+          -0.9900000000000002
+        ],
+        "tangent": [
+          0.0,
+          -1.0
+        ],
+        "outwardNormal": [
+          -1.0,
+          -0.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=10",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 10.0
+      },
+      "expected": {
+        "point": [
+          -1.5,
+          -1.0
+        ],
+        "tangent": [
+          1.0,
+          0.0
+        ],
+        "outwardNormal": [
+          0.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=12.5",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": 12.5
+      },
+      "expected": {
+        "point": [
+          1.0,
+          -1.0
+        ],
+        "tangent": [
+          1.0,
+          0.0
+        ],
+        "outwardNormal": [
+          0.0,
+          -1.0
+        ]
+      }
+    },
+    {
+      "name": "offset rect 3x2 (P=10) at s=-1.25",
+      "input": {
+        "ring": [
+          [
+            -1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            -1.0
+          ],
+          [
+            1.5,
+            1.0
+          ],
+          [
+            -1.5,
+            1.0
+          ]
+        ],
+        "s": -1.25
+      },
+      "expected": {
+        "point": [
+          -1.5,
+          0.25
+        ],
+        "tangent": [
+          0.0,
+          -1.0
+        ],
+        "outwardNormal": [
+          -1.0,
+          -0.0
+        ]
+      }
+    }
+  ],
+  "note": "s wraps modulo perimeter, including negative s."
+}

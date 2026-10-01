@@ -1,0 +1,15 @@
+{
+  "name": "seat-booking",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/web"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run dev --workspace apps/web",
+    "fixtures:gen": "python3 tools/oracle/gen_fixtures.py",
+    "fixtures:verify": "python3 tools/oracle/verify_oracle.py"
+  }
+}

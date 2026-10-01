@@ -1,0 +1,208 @@
+{
+  "fn": "transform",
+  "generatedBy": "tools/oracle/oracle.py",
+  "tessellationTolerance": 0.001,
+  "compareTolerance": 1e-06,
+  "cases": [
+    {
+      "name": "compose: identity compose",
+      "op": "compose",
+      "input": {
+        "parent": {
+          "x": 0,
+          "y": 0,
+          "rot": 0
+        },
+        "child": {
+          "x": 1,
+          "y": 2,
+          "rot": 0.3
+        }
+      },
+      "expected": {
+        "x": 1.0,
+        "y": 2.0,
+        "rot": 0.3
+      }
+    },
+    {
+      "name": "compose: translate only",
+      "op": "compose",
+      "input": {
+        "parent": {
+          "x": 5,
+          "y": 2,
+          "rot": 0
+        },
+        "child": {
+          "x": 1.5,
+          "y": 0,
+          "rot": 0
+        }
+      },
+      "expected": {
+        "x": 6.5,
+        "y": 2.0,
+        "rot": 0
+      }
+    },
+    {
+      "name": "compose: rotate 90",
+      "op": "compose",
+      "input": {
+        "parent": {
+          "x": 5,
+          "y": 2,
+          "rot": 1.5707963267948966
+        },
+        "child": {
+          "x": 1.5,
+          "y": 0,
+          "rot": 0
+        }
+      },
+      "expected": {
+        "x": 5.0,
+        "y": 3.5,
+        "rot": 1.5707963267948966
+      }
+    },
+    {
+      "name": "compose: rotate 45 + offset",
+      "op": "compose",
+      "input": {
+        "parent": {
+          "x": -3,
+          "y": 1.25,
+          "rot": 0.7853981633974483
+        },
+        "child": {
+          "x": 2,
+          "y": -1,
+          "rot": 0.5235987755982988
+        }
+      },
+      "expected": {
+        "x": -0.8786796564403574,
+        "y": 1.9571067811865475,
+        "rot": 1.308996938995747
+      }
+    },
+    {
+      "name": "apply: identity",
+      "op": "apply",
+      "input": {
+        "transform": {
+          "x": 0,
+          "y": 0,
+          "rot": 0
+        },
+        "point": [
+          1.5,
+          0.0
+        ]
+      },
+      "expected": {
+        "point": [
+          1.5,
+          0.0
+        ]
+      }
+    },
+    {
+      "name": "apply: translate",
+      "op": "apply",
+      "input": {
+        "transform": {
+          "x": 5,
+          "y": 2,
+          "rot": 0
+        },
+        "point": [
+          1.5,
+          0.0
+        ]
+      },
+      "expected": {
+        "point": [
+          6.5,
+          2.0
+        ]
+      }
+    },
+    {
+      "name": "apply: rotate 90",
+      "op": "apply",
+      "input": {
+        "transform": {
+          "x": 5,
+          "y": 2,
+          "rot": 1.5707963267948966
+        },
+        "point": [
+          1.5,
+          0.0
+        ]
+      },
+      "expected": {
+        "point": [
+          5.0,
+          3.5
+        ]
+      }
+    },
+    {
+      "name": "apply: rotate 180",
+      "op": "apply",
+      "input": {
+        "transform": {
+          "x": 0,
+          "y": 0,
+          "rot": 3.141592653589793
+        },
+        "point": [
+          1.0,
+          2.0
+        ]
+      },
+      "expected": {
+        "point": [
+          -1.0000000000000002,
+          -1.9999999999999998
+        ]
+      }
+    },
+    {
+      "name": "invert: rotate 90 at offset",
+      "op": "invert",
+      "input": {
+        "transform": {
+          "x": 5,
+          "y": 2,
+          "rot": 1.5707963267948966
+        }
+      },
+      "expected": {
+        "x": -2.0000000000000004,
+        "y": 5.0,
+        "rot": -1.5707963267948966
+      }
+    },
+    {
+      "name": "invert: rotate -30",
+      "op": "invert",
+      "input": {
+        "transform": {
+          "x": 1,
+          "y": -1,
+          "rot": -0.5235987755982988
+        }
+      },
+      "expected": {
+        "x": -1.3660254037844386,
+        "y": 0.36602540378443876,
+        "rot": 0.5235987755982988
+      }
+    }
+  ]
+}

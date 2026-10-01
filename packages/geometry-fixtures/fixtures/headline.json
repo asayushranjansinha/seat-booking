@@ -1,0 +1,335 @@
+{
+  "fn": "placeSeats",
+  "generatedBy": "tools/oracle/oracle.py",
+  "tessellationTolerance": 0.001,
+  "compareTolerance": 1e-06,
+  "cases": [
+    {
+      "name": "resize: rect 2x1 n=8 (offset perimeter 10)",
+      "input": {
+        "shape": {
+          "kind": "RECT",
+          "w": 2.0,
+          "h": 1.0
+        },
+        "clearance": 0.5,
+        "rule": {
+          "kind": "PERIMETER_EVEN",
+          "count": 8
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -1.5,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": -0.25,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 1.0,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": 1.5,
+            "y": -0.25,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": 1.5,
+            "y": 1.0,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": 0.25,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 6,
+            "x": -1.0,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 7,
+            "x": -1.5,
+            "y": 0.25,
+            "rot": 0.0,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "resize: rect 3x1.5 n=8 (offset perimeter 13) - same fractional positions",
+      "input": {
+        "shape": {
+          "kind": "RECT",
+          "w": 3.0,
+          "h": 1.5
+        },
+        "clearance": 0.5,
+        "rule": {
+          "kind": "PERIMETER_EVEN",
+          "count": 8
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -2.0,
+            "y": -1.25,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": -0.375,
+            "y": -1.25,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 1.25,
+            "y": -1.25,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": 2.0,
+            "y": -0.375,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": 2.0,
+            "y": 1.25,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": 0.375,
+            "y": 1.25,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 6,
+            "x": -1.25,
+            "y": 1.25,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 7,
+            "x": -2.0,
+            "y": 0.375,
+            "rot": 0.0,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "override: seat 2 dragged to the top-right corner, other 7 redistribute",
+      "input": {
+        "shape": {
+          "kind": "RECT",
+          "w": 2.0,
+          "h": 1.0
+        },
+        "clearance": 0.5,
+        "rule": {
+          "kind": "PERIMETER_EVEN",
+          "count": 8
+        },
+        "tolerance": 0.001,
+        "overrides": [
+          {
+            "index": 2,
+            "x": 1.5,
+            "y": 1.0,
+            "rot": 0.0
+          }
+        ]
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -1.5,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": -0.25,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 1.5,
+            "y": 1.0,
+            "rot": 0.0,
+            "override": true
+          },
+          {
+            "index": 3,
+            "x": 1.0,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": 1.5,
+            "y": -0.25,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": 0.25,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 6,
+            "x": -1.0,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 7,
+            "x": -1.5,
+            "y": 0.25,
+            "rot": 0.0,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "override: two pinned seats, remaining 6 split proportionally between the gaps",
+      "input": {
+        "shape": {
+          "kind": "RECT",
+          "w": 2.0,
+          "h": 1.0
+        },
+        "clearance": 0.5,
+        "rule": {
+          "kind": "PERIMETER_EVEN",
+          "count": 8
+        },
+        "tolerance": 0.001,
+        "overrides": [
+          {
+            "index": 0,
+            "x": -1.5,
+            "y": -1.0,
+            "rot": 0.0
+          },
+          {
+            "index": 4,
+            "x": 1.5,
+            "y": 1.0,
+            "rot": 0.0
+          }
+        ]
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -1.5,
+            "y": -1.0,
+            "rot": 0.0,
+            "override": true
+          },
+          {
+            "index": 1,
+            "x": -0.25,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 1.0,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": 1.5,
+            "y": -0.25,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": 1.5,
+            "y": 1.0,
+            "rot": 0.0,
+            "override": true
+          },
+          {
+            "index": 5,
+            "x": 0.25,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 6,
+            "x": -1.0,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 7,
+            "x": -1.5,
+            "y": 0.25,
+            "rot": 0.0,
+            "override": false
+          }
+        ]
+      }
+    }
+  ],
+  "note": "The product requirement: place a seat at an angle and the nearby seats move in the same proportion. Resize cases must share identical normalised arc positions."
+}

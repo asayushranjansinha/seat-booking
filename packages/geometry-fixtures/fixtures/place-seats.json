@@ -1,0 +1,658 @@
+{
+  "fn": "placeSeats",
+  "generatedBy": "tools/oracle/oracle.py",
+  "tessellationTolerance": 0.001,
+  "compareTolerance": 1e-06,
+  "cases": [
+    {
+      "name": "PERIMETER_EVEN rect 2x1 n=8",
+      "input": {
+        "shape": {
+          "kind": "RECT",
+          "w": 2.0,
+          "h": 1.0
+        },
+        "clearance": 0.5,
+        "rule": {
+          "kind": "PERIMETER_EVEN",
+          "count": 8
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -1.5,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": -0.25,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 1.0,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": 1.5,
+            "y": -0.25,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": 1.5,
+            "y": 1.0,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": 0.25,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 6,
+            "x": -1.0,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 7,
+            "x": -1.5,
+            "y": 0.25,
+            "rot": 0.0,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "PERIMETER_EVEN rect 2x1 n=6 startOffset 0.5",
+      "input": {
+        "shape": {
+          "kind": "RECT",
+          "w": 2.0,
+          "h": 1.0
+        },
+        "clearance": 0.5,
+        "rule": {
+          "kind": "PERIMETER_EVEN",
+          "count": 6,
+          "startOffset": 0.5
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -0.6666666666666666,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": 1.0,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 1.5,
+            "y": 0.16666666666666696,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": 0.666666666666667,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": -1.0,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": -1.5,
+            "y": -0.16666666666666607,
+            "rot": 0.0,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "PERIMETER_EVEN circle r=0.75 n=5",
+      "input": {
+        "shape": {
+          "kind": "CIRCLE",
+          "r": 0.75
+        },
+        "clearance": 0.4,
+        "rule": {
+          "kind": "PERIMETER_EVEN",
+          "count": 5
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": 1.150482398588157,
+            "y": -9.737896782793662e-18,
+            "rot": -3.0925052683774523,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": 0.35522804004234976,
+            "y": 1.0933358383211766,
+            "rot": -1.9144080232812826,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": -0.9296886605563907,
+            "y": 0.6754475874462676,
+            "rot": -0.6381360077604262,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": -0.9296886605563903,
+            "y": -0.675447587446268,
+            "rot": 0.6381360077604253,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": 0.3552280400423498,
+            "y": -1.0933358383211764,
+            "rot": 1.9144080232812821,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "PERIMETER_EVEN L-shape n=10",
+      "input": {
+        "shape": {
+          "kind": "POLYGON",
+          "points": [
+            [
+              -1.0,
+              -1.0
+            ],
+            [
+              1.0,
+              -1.0
+            ],
+            [
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0
+            ],
+            [
+              -1.0,
+              1.0
+            ]
+          ]
+        },
+        "clearance": 0.3,
+        "rule": {
+          "kind": "PERIMETER_EVEN",
+          "count": 10
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -1.3,
+            "y": -1.3,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": -0.26,
+            "y": -1.3,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 0.78,
+            "y": -1.3,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": 1.3,
+            "y": -0.78,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": 1.3,
+            "y": 0.26,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": 0.30000000000000004,
+            "y": 0.3,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 6,
+            "x": 0.25999999999999995,
+            "y": 1.3,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 7,
+            "x": -0.7799999999999991,
+            "y": 1.3,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 8,
+            "x": -1.3,
+            "y": 0.7800000000000005,
+            "rot": 0.0,
+            "override": false
+          },
+          {
+            "index": 9,
+            "x": -1.3,
+            "y": -0.26000000000000045,
+            "rot": 0.0,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "EDGE_COUNTS rect named sides",
+      "input": {
+        "shape": {
+          "kind": "RECT",
+          "w": 2.0,
+          "h": 1.0
+        },
+        "clearance": 0.5,
+        "rule": {
+          "kind": "EDGE_COUNTS",
+          "counts": {
+            "top": 3,
+            "bottom": 3,
+            "left": 1,
+            "right": 1
+          }
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -0.6666666666666667,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": 0.0,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 0.6666666666666667,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": 1.5,
+            "y": 0.0,
+            "rot": 3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": 0.6666666666666667,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": 0.0,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 6,
+            "x": -0.6666666666666667,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 7,
+            "x": -1.5,
+            "y": 0.0,
+            "rot": 0.0,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "EDGE_COUNTS triangle numeric indices",
+      "input": {
+        "shape": {
+          "kind": "POLYGON",
+          "points": [
+            [
+              -1.0,
+              -0.6
+            ],
+            [
+              1.0,
+              -0.6
+            ],
+            [
+              0.0,
+              0.9
+            ]
+          ]
+        },
+        "clearance": 0.3,
+        "rule": {
+          "kind": "EDGE_COUNTS",
+          "counts": {
+            "0": 2,
+            "1": 1,
+            "2": 1
+          }
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": -0.5,
+            "y": -0.8999999999999999,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": 0.5,
+            "y": -0.8999999999999999,
+            "rot": 1.5707963267948966,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": 0.749615088301353,
+            "y": 0.3164100588675688,
+            "rot": -2.5535900500422257,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": -0.749615088301353,
+            "y": 0.3164100588675688,
+            "rot": -0.5880026035475675,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "RADIAL circle n=6",
+      "input": {
+        "shape": {
+          "kind": "CIRCLE",
+          "r": 0.75
+        },
+        "clearance": 0.4,
+        "rule": {
+          "kind": "RADIAL",
+          "count": 6
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": 1.15,
+            "y": 0.0,
+            "rot": -3.141592653589793,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": 0.5750000000000001,
+            "y": 0.9959292143521044,
+            "rot": -2.0943951023931957,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": -0.5749999999999997,
+            "y": 0.9959292143521045,
+            "rot": -1.0471975511965979,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": -1.15,
+            "y": 1.408343819019456e-16,
+            "rot": -1.2246467991473532e-16,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": -0.5750000000000005,
+            "y": -0.995929214352104,
+            "rot": 1.0471975511965972,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": 0.5750000000000001,
+            "y": -0.9959292143521044,
+            "rot": 2.0943951023931957,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "RADIAL ellipse n=8 startAngle pi/8",
+      "input": {
+        "shape": {
+          "kind": "ELLIPSE",
+          "rx": 1.2,
+          "ry": 0.8
+        },
+        "clearance": 0.35,
+        "rule": {
+          "kind": "RADIAL",
+          "count": 8,
+          "startAngle": 0.39269908169872414
+        },
+        "tolerance": 0.001
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": 1.4320132753924943,
+            "y": 0.4400859472198532,
+            "rot": -2.8434341034171213,
+            "override": false
+          },
+          {
+            "index": 1,
+            "x": 0.5931593201658891,
+            "y": 1.0624614623879796,
+            "rot": -2.0799802906736393,
+            "override": false
+          },
+          {
+            "index": 2,
+            "x": -0.593159320165889,
+            "y": 1.0624614623879796,
+            "rot": -1.0616123629161542,
+            "override": false
+          },
+          {
+            "index": 3,
+            "x": -1.4320132753924943,
+            "y": 0.44008594721985334,
+            "rot": -0.2981585501726722,
+            "override": false
+          },
+          {
+            "index": 4,
+            "x": -1.4320132753924943,
+            "y": -0.4400859472198531,
+            "rot": 0.298158550172672,
+            "override": false
+          },
+          {
+            "index": 5,
+            "x": -0.5931593201658899,
+            "y": -1.0624614623879793,
+            "rot": 1.0616123629161534,
+            "override": false
+          },
+          {
+            "index": 6,
+            "x": 0.5931593201658895,
+            "y": -1.0624614623879796,
+            "rot": 2.0799802906736393,
+            "override": false
+          },
+          {
+            "index": 7,
+            "x": 1.432013275392494,
+            "y": -0.4400859472198539,
+            "rot": 2.8434341034171204,
+            "override": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "MANUAL three seats",
+      "input": {
+        "shape": {
+          "kind": "RECT",
+          "w": 2.0,
+          "h": 1.0
+        },
+        "clearance": 0.5,
+        "rule": {
+          "kind": "MANUAL"
+        },
+        "tolerance": 0.001,
+        "overrides": [
+          {
+            "index": 0,
+            "x": 0.0,
+            "y": -1.0,
+            "rot": 1.5707963267948966
+          },
+          {
+            "index": 1,
+            "x": 1.5,
+            "y": 0.0,
+            "rot": 3.141592653589793
+          },
+          {
+            "index": 2,
+            "x": 0.0,
+            "y": 1.0,
+            "rot": -1.5707963267948966
+          }
+        ]
+      },
+      "expected": {
+        "seats": [
+          {
+            "index": 0,
+            "x": 0.0,
+            "y": -1.0,
+            "rot": 1.5707963267948966,
+            "override": true
+          },
+          {
+            "index": 1,
+            "x": 1.5,
+            "y": 0.0,
+            "rot": 3.141592653589793,
+            "override": true
+          },
+          {
+            "index": 2,
+            "x": 0.0,
+            "y": 1.0,
+            "rot": -1.5707963267948966,
+            "override": true
+          }
+        ]
+      }
+    }
+  ]
+}

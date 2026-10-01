@@ -1,0 +1,99 @@
+{
+  "fn": "segmentCountForArc",
+  "generatedBy": "tools/oracle/oracle.py",
+  "tessellationTolerance": 0.001,
+  "compareTolerance": 1e-06,
+  "cases": [
+    {
+      "name": "r=1 tol=0.001",
+      "input": {
+        "radius": 1.0,
+        "tolerance": 0.001
+      },
+      "expected": {
+        "n": 72
+      }
+    },
+    {
+      "name": "r=0.75 tol=0.001",
+      "input": {
+        "radius": 0.75,
+        "tolerance": 0.001
+      },
+      "expected": {
+        "n": 64
+      }
+    },
+    {
+      "name": "r=2 tol=0.001",
+      "input": {
+        "radius": 2.0,
+        "tolerance": 0.001
+      },
+      "expected": {
+        "n": 100
+      }
+    },
+    {
+      "name": "r=10 tol=0.001",
+      "input": {
+        "radius": 10.0,
+        "tolerance": 0.001
+      },
+      "expected": {
+        "n": 224
+      }
+    },
+    {
+      "name": "r=1 tol=0.01",
+      "input": {
+        "radius": 1.0,
+        "tolerance": 0.01
+      },
+      "expected": {
+        "n": 24
+      }
+    },
+    {
+      "name": "r=1 tol=0.0001",
+      "input": {
+        "radius": 1.0,
+        "tolerance": 0.0001
+      },
+      "expected": {
+        "n": 224
+      }
+    },
+    {
+      "name": "r=1 tol=1e-06",
+      "input": {
+        "radius": 1.0,
+        "tolerance": 1e-06
+      },
+      "expected": {
+        "n": 512
+      }
+    },
+    {
+      "name": "r=1e-09 tol=0.001",
+      "input": {
+        "radius": 1e-09,
+        "tolerance": 0.001
+      },
+      "expected": {
+        "n": 12
+      }
+    },
+    {
+      "name": "r=0.05 tol=0.001",
+      "input": {
+        "radius": 0.05,
+        "tolerance": 0.001
+      },
+      "expected": {
+        "n": 16
+      }
+    }
+  ],
+  "note": "Integer output: must match EXACTLY, not within tolerance."
+}

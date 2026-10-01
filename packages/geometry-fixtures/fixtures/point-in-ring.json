@@ -1,0 +1,198 @@
+{
+  "fn": "pointInRing",
+  "generatedBy": "tools/oracle/oracle.py",
+  "tessellationTolerance": 0.001,
+  "compareTolerance": 1e-06,
+  "cases": [
+    {
+      "name": "L-shape: centre of lower arm",
+      "input": {
+        "ring": [
+          [
+            -1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ],
+          [
+            -1.0,
+            1.0
+          ]
+        ],
+        "point": [
+          -0.5,
+          -0.5
+        ]
+      },
+      "expected": {
+        "inside": true
+      }
+    },
+    {
+      "name": "L-shape: inside upper arm",
+      "input": {
+        "ring": [
+          [
+            -1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ],
+          [
+            -1.0,
+            1.0
+          ]
+        ],
+        "point": [
+          -0.5,
+          0.5
+        ]
+      },
+      "expected": {
+        "inside": true
+      }
+    },
+    {
+      "name": "L-shape: in the notch (outside)",
+      "input": {
+        "ring": [
+          [
+            -1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ],
+          [
+            -1.0,
+            1.0
+          ]
+        ],
+        "point": [
+          0.5,
+          0.5
+        ]
+      },
+      "expected": {
+        "inside": false
+      }
+    },
+    {
+      "name": "L-shape: far outside",
+      "input": {
+        "ring": [
+          [
+            -1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ],
+          [
+            -1.0,
+            1.0
+          ]
+        ],
+        "point": [
+          5.0,
+          5.0
+        ]
+      },
+      "expected": {
+        "inside": false
+      }
+    },
+    {
+      "name": "L-shape: inside near edge",
+      "input": {
+        "ring": [
+          [
+            -1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            -1.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0
+          ],
+          [
+            -1.0,
+            1.0
+          ]
+        ],
+        "point": [
+          0.95,
+          -0.95
+        ]
+      },
+      "expected": {
+        "inside": true
+      }
+    }
+  ]
+}
