@@ -1,0 +1,62 @@
+spring:
+  application:
+    name: seat-booking-api
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/seatbooking
+    username: seatbooking
+    password: seatbooking
+
+  jpa:
+    # Explicit SQL migrations own the schema. Hibernate only checks that the entities
+    # still match it, because this schema uses an extension, a generated column and an
+    # exclusion constraint that Hibernate DDL cannot express.
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  # Blocking JPA on virtual threads. Deliberately not WebFlux: SseEmitter works well and
+  # the reactive programming tax buys nothing at this scale.
+  threads:
+    virtual:
+      enabled: true
+
+  mail:
+    host: localhost
+    port: 1025
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+server:
+  port: 8080
+  error:
+    include-message: always
+
+seatbooking:
+  auth:
+    # Dev-only default. Override with SEATBOOKING_AUTH_JWT_SECRET in any real deployment;
+    # the application refuses to start with this value when a prod profile is active.
+    jwt-secret: ${SEATBOOKING_AUTH_JWT_SECRET:dev-only-insecure-secret-change-me-0123456789abcdef}
+    access-token-ttl: PT15M
+    refresh-token-ttl: P14D
+  booking:
+    max-advance: P6D
+    max-duration: PT6H
+
+logging:
+  level:
+    org.flywaydb: INFO
