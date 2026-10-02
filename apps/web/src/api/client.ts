@@ -197,8 +197,22 @@ export const api = {
     return { scene: data, etag };
   },
 
-  async createDraft(floorId: string): Promise<SceneJson> {
-    const { data } = await request<SceneJson>(`/api/floors/${floorId}/draft`, { method: 'POST' });
+  /**
+   * Start a draft on a floor.
+   *
+   * <p>`fromFloorId` copies another floor's layout into it instead of starting from this
+   * floor's own published version. The server refuses if the floor already has a draft,
+   * rather than overwriting unpublished work.
+   */
+  async createDraft(floorId: string, fromFloorId?: string): Promise<SceneJson> {
+    // Typed as a string, but this is handed to onClick in places and a React event is
+    // truthy — it would go up the wire as "[object Object]" and come back a 400.
+    const query = typeof fromFloorId === 'string' && fromFloorId !== ''
+      ? `?from=${encodeURIComponent(fromFloorId)}`
+      : '';
+    const { data } = await request<SceneJson>(
+      `/api/floors/${floorId}/draft${query}`, { method: 'POST' },
+    );
     return data;
   },
 

@@ -470,40 +470,47 @@ export function buildHandles(
   group.rotation.z = local.rot;
 
   const grip = 0.14 * scale;
-  const corners: Array<{ x: number; y: number; index: number }> = [];
 
-  if (shape.kind === 'RECT') {
-    const w = shape.w / 2;
-    const h = shape.h / 2;
-    corners.push(
-      { x: -w, y: -h, index: 0 },
-      { x: w, y: -h, index: 1 },
-      { x: w, y: h, index: 2 },
-      { x: -w, y: h, index: 3 },
-    );
-  } else if (shape.kind === 'CIRCLE') {
-    corners.push({ x: shape.r, y: 0, index: 0 });
-  } else if (shape.kind === 'ELLIPSE') {
-    corners.push({ x: shape.rx, y: 0, index: 0 }, { x: 0, y: shape.ry, index: 1 });
-  } else if (shape.kind === 'POLYGON') {
-    // A traced outline had no grips at all, so a pen-drawn room was the one thing on the
-    // plan that could never be resized — you had to delete it and trace it again. Grips
-    // on its extent scale the whole outline.
-    const hx = Math.max(...shape.points.map(([x]) => Math.abs(x)), 0.2);
-    const hy = Math.max(...shape.points.map(([, y]) => Math.abs(y)), 0.2);
-    corners.push(
-      { x: -hx, y: -hy, index: 0 },
-      { x: hx, y: -hy, index: 1 },
-      { x: hx, y: hy, index: 2 },
-      { x: -hx, y: hy, index: 3 },
+  // Half the width and half the height, whatever the shape is. A traced outline gets
+  // grips on its extent: without them a pen-drawn room was the one thing on the plan that
+  // could never be resized at all — you had to delete it and trace it again.
+  const hx = shape.kind === 'RECT' ? shape.w / 2
+    : shape.kind === 'CIRCLE' ? shape.r
+    : shape.kind === 'ELLIPSE' ? shape.rx
+    : shape.kind === 'POLYGON' ? Math.max(...shape.points.map(([x]) => Math.abs(x)), 0.2)
+    : 0.2;
+  const hy = shape.kind === 'RECT' ? shape.h / 2
+    : shape.kind === 'CIRCLE' ? shape.r
+    : shape.kind === 'ELLIPSE' ? shape.ry
+    : shape.kind === 'POLYGON' ? Math.max(...shape.points.map(([, y]) => Math.abs(y)), 0.2)
+    : 0.2;
+
+  // Indices MUST match GRIP_SIGNS in editor/resize.ts: corners first, then edges.
+  const grips: Array<{ x: number; y: number; index: number; edge: boolean }> = [
+    { x: -hx, y: -hy, index: 0, edge: false },
+    { x: hx, y: -hy, index: 1, edge: false },
+    { x: hx, y: hy, index: 2, edge: false },
+    { x: -hx, y: hy, index: 3, edge: false },
+  ];
+
+  // A circle has one radius, so an edge grip would have to turn it into an ellipse. That
+  // is a different kind of shape, not a resize, so a circle keeps its corners only.
+  if (shape.kind !== 'CIRCLE') {
+    grips.push(
+      { x: 0, y: -hy, index: 4, edge: true },
+      { x: hx, y: 0, index: 5, edge: true },
+      { x: 0, y: hy, index: 6, edge: true },
+      { x: -hx, y: 0, index: 7, edge: true },
     );
   }
 
-  for (const corner of corners) {
-    const mesh = handleMesh(grip, HANDLE_FILL);
-    mesh.position.set(corner.x, corner.y, 0.3);
+  for (const g of grips) {
+    // Edge grips are drawn smaller: they do less, and at a corner the two would otherwise
+    // crowd each other on a shape that has been dragged down small.
+    const mesh = handleMesh(g.edge ? grip * 0.72 : grip, HANDLE_FILL);
+    mesh.position.set(g.x, g.y, 0.3);
     mesh.userData.handle = {
-      kind: 'resize', index: corner.index, selection, shape, local,
+      kind: 'resize', index: g.index, selection, shape, local,
     } satisfies HandleData;
     group.add(mesh);
   }

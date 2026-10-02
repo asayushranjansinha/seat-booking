@@ -18,10 +18,11 @@
 # the schema, so Flyway has nothing to re-run and the seeder has nothing to do.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source tools/lib/db.sh
 
-# -i is required: without it docker exec does not forward stdin and psql silently runs
-# nothing, reporting success while deleting not a single row.
-docker exec -i seatbooking-postgres psql -U seatbooking -d seatbooking -q -v ON_ERROR_STOP=1 <<'SQL'
+# Stdin forwarding is handled by $PSQL (see tools/lib/db.sh): the container form needs
+# docker exec -i, or a heredoc runs empty and reports success having deleted nothing.
+"${PSQL[@]}" -q -v ON_ERROR_STOP=1 <<'SQL'
 SET client_min_messages TO warning;
 
 BEGIN;
@@ -52,11 +53,11 @@ curl -s -X DELETE http://localhost:8025/api/v1/messages >/dev/null 2>&1 \
 
 echo
 echo "What is left:"
-docker exec -i seatbooking-postgres psql -U seatbooking -d seatbooking -t -A -F' ' -c "
+"${PSQL[@]}" -t -A -F' ' -c "
   SELECT u.email, u.display_name, u.role FROM app_user u ORDER BY u.role, u.email;"
 
 echo
-docker exec -i seatbooking-postgres psql -U seatbooking -d seatbooking -t -A -c "
+"${PSQL[@]}" -t -A -c "
   SELECT 'buildings=' || (SELECT count(*) FROM building)
       || '  floors='   || (SELECT count(*) FROM floor)
       || '  rooms='    || (SELECT count(*) FROM room)

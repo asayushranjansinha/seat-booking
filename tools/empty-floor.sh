@@ -9,10 +9,11 @@
 # UI. Delete them and you cannot draw anything at all.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source tools/lib/db.sh
 
-# -i is required: without it docker exec does not forward stdin and psql silently runs
-# nothing, reporting success while deleting not a single row.
-docker exec -i seatbooking-postgres psql -U seatbooking -d seatbooking -q -v ON_ERROR_STOP=1 <<'SQL'
+# Stdin forwarding is handled by $PSQL (see tools/lib/db.sh): the container form needs
+# docker exec -i, or a heredoc runs empty and reports success having deleted nothing.
+"${PSQL[@]}" -q -v ON_ERROR_STOP=1 <<'SQL'
 SET client_min_messages TO warning;
 
 -- Order matters: bookings reference seats with ON DELETE RESTRICT, which is deliberate
@@ -28,7 +29,7 @@ DELETE FROM floor_plan_version;
 SQL
 
 echo "Layout cleared. What is left:"
-docker exec seatbooking-postgres psql -U seatbooking -d seatbooking -q -c "
+"${PSQL[@]}" -q -c "
 SELECT
   (SELECT count(*) FROM organization)       AS orgs,
   (SELECT count(*) FROM app_user)           AS users,
@@ -40,6 +41,6 @@ SELECT
   (SELECT count(*) FROM booking)            AS bookings;"
 
 echo "Sign in at http://localhost:3000"
-docker exec seatbooking-postgres psql -U seatbooking -d seatbooking -tAF'  ' -c \
+"${PSQL[@]}" -tAF'  ' -c \
   "SELECT '  ' || email || '  (' || role || ')' FROM app_user ORDER BY role;"
 echo "  password for all three: password"

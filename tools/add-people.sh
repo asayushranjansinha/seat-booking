@@ -10,10 +10,11 @@
 # Nothing is deleted and no existing account is touched.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source tools/lib/db.sh
 
-# -i is required: without it docker exec does not forward stdin and psql silently runs
-# nothing, reporting success while inserting not a single row.
-docker exec -i seatbooking-postgres psql -U seatbooking -d seatbooking -q -v ON_ERROR_STOP=1 <<'SQL'
+# Stdin forwarding is handled by $PSQL (see tools/lib/db.sh): the container form needs
+# docker exec -i, or a heredoc runs empty and reports success having inserted nothing.
+"${PSQL[@]}" -q -v ON_ERROR_STOP=1 <<'SQL'
 SET client_min_messages TO warning;
 
 WITH org AS (
@@ -41,7 +42,7 @@ ON CONFLICT (organization_id, email) DO NOTHING;
 SQL
 
 echo "Everyone who can sign in now:"
-docker exec -i seatbooking-postgres psql -U seatbooking -d seatbooking -t -A -F'  ' -c "
+"${PSQL[@]}" -t -A -F'  ' -c "
   SELECT rpad(email, 20), rpad(display_name, 16), role
   FROM app_user ORDER BY role, email;"
 
