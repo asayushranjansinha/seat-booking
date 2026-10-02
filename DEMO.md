@@ -19,6 +19,10 @@ cd apps/web && npm run dev                             # :3000
 
 Open **http://localhost:3000** and sign in as `admin@demo.test` / `password`.
 
+The sign-in page lists every account that exists and fills the form when you click one,
+so switching between an admin, a manager and a colleague mid-demo costs nothing. Run
+`./tools/add-people.sh` first if you want a crowd rather than three people.
+
 **Reset to a clean demo at any time** — do this between runs, it takes 25 seconds:
 
 ```bash
@@ -223,3 +227,40 @@ Yes — every table carries an organisation from day one.
 | Everything is odd | `./tools/demo-reset.sh` and reload. 25 seconds. |
 
 **Never demo on a draft you have been poking at.** Reset first.
+
+---
+
+## Newer things worth showing
+
+These came after the script above and are not woven into it. Each is one minute.
+
+**Build a row in three moves.** Draw one table. `⌘D` duplicates it clear of the original.
+Sweep a box over both, `⌘C`, `⌘V` — the pair lands where the pointer is with its spacing
+intact. Then select the row and press **Space evenly**: every gap becomes the same,
+*including the floor against each wall*, measured on the tables **and their chairs**
+because the chairs are what collide.
+
+> This is the part that reads as a real tool rather than a diagram editor.
+
+**One desk per person.** Sign in as Priya, book a desk, then try a second seat that
+overlaps in time. The refusal comes from a database constraint, not a check in the code —
+so it holds when two requests race. Say that out loud; it is the same reason the seat
+itself cannot be double-booked.
+
+**Call cabins.** In Plan, set a room's purpose to *Call cabin*. It tints on the plan. Now
+sign in as an ordinary user and try to book a seat in it: refused by the server, not by a
+hidden button. Nina or Omar (managers) can.
+
+**The plan is to scale.** Press `0` to frame the floor, pinch to zoom into a doorway. The
+walls have thickness, the door has its swing arc, and the 3D view is built from the same
+numbers — so switching views cannot show you a different building.
+
+**Deleting.** Everything on the plan answers to a click now, including partitions and
+doors. Select a partition and delete it: the zones either side merge back into one, and
+the tables stay exactly where they were.
+
+## What to say when they ask "how do I add my staff?"
+
+They will ask. The honest answer today is that you cannot from the product — accounts are
+created by a script against the database. It is the next thing to build, and it is better
+to say so than to be found out live.

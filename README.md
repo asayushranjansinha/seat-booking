@@ -17,17 +17,23 @@ cd apps/api && mvn spring-boot:run    # :8080, Flyway migrates and seeds a demo 
 cd apps/web && npm run dev            # :3000
 ```
 
-Sign in at http://localhost:3000 as `admin@demo.test` / `password`
-(`manager@demo.test` and `user@demo.test` exist with the same password).
+Sign in at <http://localhost:3000>. Every account uses the password `password`, and the
+sign-in page lists the ones that exist — it asks the server, which answers only on the
+development JWT secret, so a real deployment shows nothing.
 
 ## Giving a demo
 
-`DEMO.md` is a 15-minute script with what to click and what to say. Two helpers:
+`DEMO.md` is a 15-minute script with what to click and what to say.
 
 ```bash
-./tools/demo-reset.sh    # back to 3 rooms, 4 tables, 27 seats, no bookings  (~25s)
+./tools/demo-reset.sh    # DROPS THE SCHEMA and re-seeds: 3 rooms, 4 tables, 27 seats
+./tools/blank-slate.sh   # keep the accounts, delete every building, booking and plan
+./tools/add-people.sh    # add eight more people to whichever org exists
 ./tools/demo-race.sh     # 16 simultaneous bookings at one seat: 1 wins, 15 refused
 ```
+
+The seeder only runs on an **empty** database, which is why clearing rows does not bring
+the demo floor back and `demo-reset.sh` drops the schema instead.
 
 ## Building
 
@@ -50,9 +56,11 @@ cd apps/api && mvn test   # the same fixtures, plus schema and lifecycle tests
 ./tools/mutation-check.sh # proves the cross-language fixtures can actually fail
 ```
 
-The Java integration tests assert against the seeded demo floor, so run
-`./tools/demo-reset.sh` first if you have cleared it with `tools/empty-floor.sh`. They
-say so themselves rather than failing cryptically.
+`LayoutLifecycleTest`, `MeetingFlowTest` and `BookingConcurrencyTest` assert against the
+seeded demo floor — three named rooms, a table called 'Round Table', seat C3 — so run
+`./tools/demo-reset.sh` first if you have cleared it. They say exactly that rather than
+failing cryptically. Tests about RULES rather than about the seed run against whatever
+floor is published.
 
 ## Layout
 
@@ -76,7 +84,7 @@ seat-booking/
 | **M1b** schema, auth, layout API, validation, publish | done |
 | **M1c** layout editor | done |
 | **M2** booking | done |
-| **M3** meetings & email | not started (tables and outbox exist) |
+| **M3** meetings & email | done |
 | **M4** hardening | not started |
 
 **Plan mode** draws the building: rectangular, circular and pen-traced polygon rooms;
@@ -88,6 +96,17 @@ the validation overlay; the 2D/3D toggle; and the draft/publish flow.
 **Book mode** reads the published layout: a time scrubber over the next 6 days, seats
 coloured for the window being viewed, booking and cancellation, cost from the modelled
 rates, and live updates over SSE when someone else takes a seat.
+
+**Editing** is multi-select throughout: shift-click or sweep a box, then move, duplicate
+or delete the group as one. Arrange a room's tables on a grid, or space and line up a
+selection — both by equal GAPS including the walls, measured on the table **and its
+chairs**, because the chairs are what collide. Pan with space-drag or two fingers, zoom
+with pinch, press `0` to frame the floor. A corner grip keeps proportions; Shift
+stretches one axis.
+
+**Call cabins** are rooms only managers and admins may book a seat in, enforced in the
+service rather than by hiding a button. **One desk per person at a time** is a database
+constraint, carved out for meetings — which book a whole table under one name.
 
 **Buildings and floors** are managed from the header (admin only). A floor is where a
 layout is drawn, so deleting one is refused while any of its seats still holds a live
@@ -101,6 +120,13 @@ never loses an invite. Invitees answer from a link with no account.
 
 Seat colour is never stored. A seat is only free or taken *relative to a window*, which
 is why booking has a scrubber rather than a single live view.
+
+## What is not built
+
+In the order it would block a sale: **there is no way to create a user** — no sign-up, no
+invite, no admin screen, so adding a person means running a script against the database.
+Then: no mobile layout, no utilisation reporting, no calendar integration for desk
+bookings, and no check-in or no-show release. `CLAUDE.md` keeps the full list.
 
 ## Two things worth reading before changing anything
 
