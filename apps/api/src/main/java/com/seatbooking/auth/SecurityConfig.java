@@ -36,7 +36,7 @@ import java.util.List;
  * <p>Stateless, so no session fixation surface and no server-side session store to scale.
  */
 @Configuration
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, com.seatbooking.booking.BookingProperties.class})
 @EnableMethodSecurity
 public class SecurityConfig {
 
@@ -102,6 +102,17 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/plan-versions/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/plan-versions/**").hasRole("ADMIN")
                         .requestMatchers("/api/floors/*/draft").hasRole("ADMIN")
+                        // Booking is for everyone; only editing a layout is an admin act.
+                        .requestMatchers("/api/bookings/**").authenticated()
+                        // The SSE stream is open because EventSource cannot send an
+                        // Authorization header, and putting the token in the query string
+                        // would write it into every access log and proxy cache. The
+                        // stream therefore carries NO personal data: it says only that
+                        // some seat on some floor changed, and the client re-reads the
+                        // authenticated occupancy endpoint to learn how. Tightening this
+                        // means issuing a short-lived single-use stream ticket.
+                        .requestMatchers(HttpMethod.GET, "/api/floors/*/occupancy/stream").permitAll()
+                        .requestMatchers("/api/floors/*/occupancy").authenticated()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
                 .build();

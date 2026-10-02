@@ -136,3 +136,34 @@ export interface BuildingJson {
     draftVersionId: string | null;
   }>;
 }
+
+// ---------------------------------------------------------------------- booking (M2)
+
+export type SeatStatus = 'FREE' | 'BOOKED' | 'MINE' | 'BLOCKED';
+
+export interface SeatOccupancyJson {
+  seatId: string;
+  seatCode: string;
+  status: SeatStatus;
+  hourlyRate: number | null;
+}
+
+export interface OccupancyJson {
+  floorId: string;
+  from: string;
+  to: string;
+  seats: SeatOccupancyJson[];
+}
+
+export interface BookingJson {
+  id: string;
+  seatId: string;
+  seatCode: string;
+  roomName: string | null;
+  userId: string;
+  userEmail: string;
+  startsAt: string;
+  endsAt: string;
+  status: 'CONFIRMED' | 'CANCELLED';
+  cost: number;
+}

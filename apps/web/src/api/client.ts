@@ -1,5 +1,7 @@
 import type {
+  BookingJson,
   BuildingJson,
+  OccupancyJson,
   PublishResultJson,
   SceneJson,
   SessionJson,
@@ -136,6 +138,48 @@ export const api = {
       { method: 'POST' },
     );
     return data;
+  },
+
+  async occupancy(floorId: string, from: Date, to: Date): Promise<OccupancyJson> {
+    const query = `from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;
+    const { data } = await request<OccupancyJson>(`/api/floors/${floorId}/occupancy?${query}`);
+    return data;
+  },
+
+  async book(seatId: string, from: Date, to: Date): Promise<BookingJson> {
+    const { data } = await request<BookingJson>('/api/bookings', {
+      method: 'POST',
+      body: { seatId, startsAt: from.toISOString(), endsAt: to.toISOString() },
+    });
+    return data;
+  },
+
+  async myBookings(): Promise<BookingJson[]> {
+    const { data } = await request<BookingJson[]>('/api/bookings/mine');
+    return data;
+  },
+
+  async cancelBooking(id: string): Promise<BookingJson> {
+    const { data } = await request<BookingJson>(`/api/bookings/${id}`, { method: 'DELETE' });
+    return data;
+  },
+
+  /**
+   * Live occupancy deltas.
+   *
+   * <p>EventSource cannot carry an Authorization header, so the stream endpoint is
+   * floor-scoped and carries no personal data: it says only that some seat changed, and
+   * the client re-reads occupancy through the authenticated endpoint to find out how.
+   */
+  subscribeToOccupancy(floorId: string, onChange: () => void): () => void {
+    const source = new EventSource(`${BASE}/api/floors/${floorId}/occupancy/stream`);
+    source.addEventListener('seat-changed', onChange);
+    source.onerror = () => {
+      // EventSource reconnects by itself; this is here so a dropped connection is not
+      // mistaken for a dead one during development.
+      if (source.readyState === EventSource.CLOSED) onChange();
+    };
+    return () => source.close();
   },
 
   async publish(planVersionId: string): Promise<PublishResultJson> {

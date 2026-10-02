@@ -23,6 +23,13 @@ export const COLORS = {
   subZoneEdge: 0x45536a,
   guide: 0xffc857,
   pen: 0x4c9aff,
+  // Booking colours. Green and red are the obvious pair, but they are also the commonest
+  // colour-blindness confusion, so the two states differ in BRIGHTNESS as well as hue and
+  // the seat code is always available in the panel.
+  seatFree: 0x3ddc97,
+  seatBooked: 0x8d3b4a,
+  seatMine: 0x4c9aff,
+  seatBlocked: 0x3a4454,
 } as const;
 
 /** What a picked object refers to, stashed on the three.js object. */
@@ -68,6 +75,8 @@ function solidMesh(shape: ShapeJson, height: number, color: number, opacity = 1)
  */
 export interface BuildOptions {
   selection: Selection;
+  mode: 'PLAN' | 'BOOK';
+  occupancy: Record<string, 'FREE' | 'BOOKED' | 'MINE' | 'BLOCKED'>;
   invalidIds: Set<string>;
   view: '2D' | '3D';
   drawing: Drawing;
@@ -78,7 +87,8 @@ export interface BuildOptions {
 }
 
 export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.Group {
-  const { selection, invalidIds, view, drawing, cursor, snapGuides, handleScale } = options;
+  const { selection, invalidIds, view, drawing, cursor, snapGuides, handleScale, mode, occupancy } =
+    options;
   const root = new THREE.Group();
   const roomGroups = new Map<string, THREE.Group>();
   const tableGroups = new Map<string, THREE.Group>();
@@ -204,11 +214,13 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     parent.add(group);
 
     const selected = isSelected('seat', seat.id);
-    const colour = invalidIds.has(seat.id)
-      ? COLORS.invalid
-      : seat.override
-        ? COLORS.seatOverride
-        : COLORS.seat;
+    const colour = mode === 'BOOK'
+      ? bookingColour(occupancy[seat.id])
+      : invalidIds.has(seat.id)
+        ? COLORS.invalid
+        : seat.override
+          ? COLORS.seatOverride
+          : COLORS.seat;
 
     const mesh = view === '3D'
       ? solidMesh(seat.shape, 0.45, colour)
@@ -229,8 +241,9 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     );
   }
 
-  // Grips for whatever is selected, in 2D only: the 3D view is for review.
-  if (selection && view === '2D') {
+  // Grips for whatever is selected, in 2D only, and never while booking: a seat's
+  // position is not something a person booking it may change.
+  if (selection && view === '2D' && mode === 'PLAN') {
     if (selection.type === 'room') {
       const room = scene.rooms.find((r) => r.id === selection.id);
       const parent = room && roomGroups.get(room.id);
@@ -280,6 +293,23 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
   }
 
   return root;
+}
+
+function bookingColour(status: string | undefined): number {
+  switch (status) {
+    case 'MINE':
+      return COLORS.seatMine;
+    case 'BOOKED':
+      return COLORS.seatBooked;
+    case 'BLOCKED':
+      return COLORS.seatBlocked;
+    case 'FREE':
+      return COLORS.seatFree;
+    default:
+      // Occupancy has not arrived yet. Grey rather than green, so a seat is never shown
+      // as free before anyone has checked.
+      return COLORS.seatBlocked;
+  }
 }
 
 /** Release GPU resources for a graph that is about to be replaced. */

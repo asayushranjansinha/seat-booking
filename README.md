@@ -48,16 +48,23 @@ seat-booking/
 | --- | --- |
 | **M1a** geometry engines, fixture-locked in both languages | done |
 | **M1b** schema, auth, layout API, validation, publish | done |
-| **M1c** layout editor | core loop working; see below |
-| **M2** booking | not started (schema and constraints are already in place) |
+| **M1c** layout editor | done |
+| **M2** booking | done |
 | **M3** meetings & email | not started (tables and outbox exist) |
 | **M4** hardening | not started |
 
-M1c covers: rendering rooms, tables, seats, gates and partitions; select and drag with
-grid and angle snapping; the parametric seat rules with live redistribution; per-seat
-pinning; undo/redo; the 2D⇄3D toggle; the validation overlay; and the draft/publish flow.
-Not yet built: the polygon pen, drawing gates and partitions by hand, rotate/resize
-handles on the canvas (both are editable in the properties panel), and autosave.
+**Plan mode** draws the building: rectangular, circular and pen-traced polygon rooms;
+tables with parametric seat rules that redistribute live; gates placed onto walls;
+partitions drawn wall to wall, with JTS deriving the named sub-zones they create; drag,
+rotate and resize with grid, angle, wall and table-edge snapping; undo/redo; autosave;
+the validation overlay; the 2D/3D toggle; and the draft/publish flow.
+
+**Book mode** reads the published layout: a time scrubber over the next 6 days, seats
+coloured for the window being viewed, booking and cancellation, cost from the modelled
+rates, and live updates over SSE when someone else takes a seat.
+
+Seat colour is never stored. A seat is only free or taken *relative to a window*, which
+is why booking has a scrubber rather than a single live view.
 
 ## Two things worth reading before changing anything
 

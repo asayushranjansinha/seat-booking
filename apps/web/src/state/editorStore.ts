@@ -11,6 +11,7 @@ import {
 import type {
   FurnitureJson,
   GateJson,
+  SeatStatus,
   PartitionJson,
   PlacementJson,
   RoomJson,
@@ -69,6 +70,16 @@ interface EditorState extends UndoableState {
   /** World position of the pointer, for the live dimension readout. */
   cursor: { x: number; y: number } | null;
 
+  /** Planning the layout, or booking seats in it. */
+  mode: 'PLAN' | 'BOOK';
+  /**
+   * Seat colour in booking mode comes from here, never from the seat itself: a seat is
+   * only free or taken RELATIVE to a window, which is why the UI has a scrubber.
+   */
+  occupancy: Record<string, SeatStatus>;
+  /** The window being viewed, in epoch milliseconds. */
+  window: { from: number; to: number };
+
   loadScene: (scene: SceneJson, etag: string | null) => void;
   markSaved: (scene: SceneJson, etag: string | null) => void;
   setSelection: (selection: Selection) => void;
@@ -93,6 +104,9 @@ interface EditorState extends UndoableState {
   addTable: (roomId: string, shape: ShapeJson, at: { x: number; y: number }) => void;
 
   setCursor: (p: { x: number; y: number } | null) => void;
+  setMode: (mode: 'PLAN' | 'BOOK') => void;
+  setOccupancy: (occupancy: Record<string, SeatStatus>) => void;
+  setWindow: (window: { from: number; to: number }) => void;
   startPolygon: (p: { x: number; y: number }) => void;
   addPolygonPoint: (p: { x: number; y: number }) => void;
   commitPolygon: () => void;
@@ -106,6 +120,14 @@ const uuid = (): string => crypto.randomUUID();
 
 /** Whether the current drag gesture has already contributed its one history entry. */
 let dragHistoryRecorded = false;
+
+/** The next whole hour, for two hours: the slot someone is most likely to want. */
+export function defaultWindow(): { from: number; to: number } {
+  const from = new Date();
+  from.setMinutes(0, 0, 0);
+  from.setHours(from.getHours() + 1);
+  return { from: from.getTime(), to: from.getTime() + 2 * 60 * 60 * 1000 };
+}
 
 export function snapValue(value: number, step: number, enabled: boolean): number {
   return enabled && step > 0 ? Math.round(value / step) * step : value;
@@ -249,6 +271,9 @@ export const useEditorStore = create<EditorState>()(
       dragging: false,
       drawing: null,
       cursor: null,
+      mode: 'PLAN',
+      occupancy: {},
+      window: defaultWindow(),
 
       loadScene: (scene, etag) => {
         set({ scene, etag, dirty: false, selection: null, violations: [], drawing: null });
@@ -402,6 +427,9 @@ export const useEditorStore = create<EditorState>()(
         }),
 
       setCursor: (cursor) => set({ cursor }),
+      setMode: (mode) => set({ mode, selection: null, tool: 'SELECT', drawing: null }),
+      setOccupancy: (occupancy) => set({ occupancy }),
+      setWindow: (window) => set({ window }),
 
       startPolygon: (p) => set({ drawing: { kind: 'POLYGON', points: [p] } }),
 

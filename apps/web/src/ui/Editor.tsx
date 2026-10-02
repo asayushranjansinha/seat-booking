@@ -5,6 +5,7 @@ import { api, ApiError } from '@/api/client';
 import type { AffectedBookingJson, BuildingJson, SessionJson } from '@/api/types';
 import { useEditorStore } from '@/state/editorStore';
 import { EditorCanvas } from '@/canvas/EditorCanvas';
+import { BookingPanel } from './BookingPanel';
 import { DimensionReadout } from './DimensionReadout';
 import { PropertiesPanel } from './PropertiesPanel';
 import { Toolbar } from './Toolbar';
@@ -21,6 +22,8 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
   const setTool = useEditorStore((s) => s.setTool);
   const cancelDrawing = useEditorStore((s) => s.cancelDrawing);
   const drawing = useEditorStore((s) => s.drawing);
+  const mode = useEditorStore((s) => s.mode);
+  const setMode = useEditorStore((s) => s.setMode);
 
   const [buildings, setBuildings] = useState<BuildingJson[]>([]);
   const [floorId, setFloorId] = useState<string | null>(null);
@@ -28,7 +31,14 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
   const [message, setMessage] = useState<string | null>(null);
   const [affected, setAffected] = useState<AffectedBookingJson[]>([]);
 
-  const canEdit = scene?.status === 'DRAFT' && session.user.role === 'ADMIN';
+  const isAdmin = session.user.role === 'ADMIN';
+  const canEdit = mode === 'PLAN' && scene?.status === 'DRAFT' && isAdmin;
+
+  // Everyone but an admin is here to book, so start them there rather than on an
+  // editor they are not allowed to use.
+  useEffect(() => {
+    if (!isAdmin) setMode('BOOK');
+  }, [isAdmin, setMode]);
 
   useEffect(() => {
     api.buildings().then((list) => {
@@ -42,13 +52,15 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
     if (!floorId) return;
     const building = buildings.find((b) => b.floors.some((f) => f.id === floorId));
     const floor = building?.floors.find((f) => f.id === floorId);
-    const load = floor?.draftVersionId
+    // Booking always reads the PUBLISHED layout: a draft is a work in progress and its
+    // seats may not exist yet, so offering them would sell a chair nobody can sit in.
+    const load = mode === 'PLAN' && floor?.draftVersionId
       ? api.scene(floor.draftVersionId)
       : api.publishedScene(floorId);
     load
       .then(({ scene: s, etag: e }) => loadScene(s, e))
       .catch(() => setMessage('This floor has no published layout yet.'));
-  }, [floorId, buildings, loadScene]);
+  }, [floorId, buildings, loadScene, mode]);
 
   const refreshBuildings = useCallback(async () => {
     setBuildings(await api.buildings());
@@ -184,6 +196,25 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
         }}
       >
         <strong style={{ fontSize: 13 }}>Parametric Seat Booking</strong>
+        <div style={{ display: 'flex', border: '1px solid var(--line)', borderRadius: 6, overflow: 'hidden' }}>
+          {(['PLAN', 'BOOK'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              disabled={m === 'PLAN' && !isAdmin}
+              style={{
+                border: 'none',
+                borderRadius: 0,
+                padding: '5px 12px',
+                background: mode === m ? 'var(--accent)' : 'transparent',
+                color: mode === m ? '#06121f' : 'var(--text)',
+                fontWeight: mode === m ? 600 : 400,
+              }}
+            >
+              {m === 'PLAN' ? 'Plan' : 'Book'}
+            </button>
+          ))}
+        </div>
         <select
           style={{ width: 240 }}
           value={floorId ?? ''}
@@ -205,19 +236,21 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
         <button onClick={onSignOut}>Sign out</button>
       </div>
 
-      <Toolbar
-        onSave={save}
-        onValidate={validate}
-        onPublish={publish}
-        onCreateDraft={createDraft}
-        busy={busy}
-        canEdit={!!canEdit}
-      />
+      {mode === 'PLAN' && (
+        <Toolbar
+          onSave={save}
+          onValidate={validate}
+          onPublish={publish}
+          onCreateDraft={createDraft}
+          busy={busy}
+          canEdit={!!canEdit}
+        />
+      )}
 
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <EditorCanvas />
-          <DimensionReadout />
+          {mode === 'PLAN' && <DimensionReadout />}
         </div>
         <aside
           style={{
@@ -229,11 +262,11 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
             overflowY: 'auto',
           }}
         >
-          <PropertiesPanel />
+          {mode === 'PLAN' ? <PropertiesPanel /> : <BookingPanel floorId={floorId} />}
         </aside>
       </div>
 
-      <ValidationPanel affected={affected} />
+      {mode === 'PLAN' && <ValidationPanel affected={affected} />}
     </main>
   );
 }

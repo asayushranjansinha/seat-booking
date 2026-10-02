@@ -191,7 +191,7 @@ export function EditorCanvas() {
       if (!s) return;
       const world = toWorld(event);
 
-      if (state.tool !== 'SELECT') {
+      if (state.mode === 'PLAN' && state.tool !== 'SELECT') {
         switch (state.tool) {
           case 'ROOM_RECT':
             state.addRoom({ kind: 'RECT', w: 8, h: 6 }, world);
@@ -300,6 +300,10 @@ export function EditorCanvas() {
       state.setSelection(pick.selection);
       if (state.view === '3D') return; // 3D is for review, not authoring
 
+      if (state.mode === 'BOOK') {
+        return; // booking selects a seat; it never moves one
+      }
+
       const local = toLocal(s, pick.selection, world);
       dragRef.current = {
         mode: 'move',
@@ -373,7 +377,8 @@ export function EditorCanvas() {
     // fraction of a millisecond, and it keeps the renderer a pure function of the store.
     let lastKey = '';
     const rebuild = () => {
-      const { scene: s, selection, violations, view, drawing, cursor } = useEditorStore.getState();
+      const { scene: s, selection, violations, view, drawing, cursor, mode, occupancy } =
+        useEditorStore.getState();
       if (!s) return;
       const key = [
         s.planVersionId,
@@ -386,6 +391,9 @@ export function EditorCanvas() {
         s.seats.map((x) => `${x.localTransform.x.toFixed(4)},${x.localTransform.y.toFixed(4)},${x.localTransform.rot.toFixed(4)},${x.override ? 1 : 0}`).join('|'),
         s.furniture.map((f) => `${f.transform.x},${f.transform.y},${f.transform.rot},${JSON.stringify(f.shape)}`).join('|'),
         s.rooms.map((r) => `${r.transform.x},${r.transform.y},${r.transform.rot},${JSON.stringify(r.shape)},${r.gates.length},${r.partitions.length},${(r.subZones ?? []).length}`).join('|'),
+        mode,
+        // Seat colour follows occupancy, so the graph must rebuild when it changes.
+        Object.entries(occupancy).map(([k, v]) => `${k}:${v}`).join(','),
         JSON.stringify(drawing),
         drawing ? JSON.stringify(cursor) : '-',
         JSON.stringify(guidesRef.current),
@@ -402,6 +410,8 @@ export function EditorCanvas() {
       );
       graph = buildSceneGraph(s, {
         selection,
+        mode,
+        occupancy,
         invalidIds: invalid,
         view,
         drawing,
