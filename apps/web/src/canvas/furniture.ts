@@ -24,6 +24,14 @@ const TABLE_TOP = 0.74;
 const TOP_THICKNESS = 0.05;
 const LEG = 0.06;
 
+/**
+ * How tall a door is, and therefore how much wall is left above one.
+ *
+ * <p>Shared by the leaf and by the hole it stands in, because a leaf that does not match
+ * its own opening is the thing that makes a doorway look like a mistake.
+ */
+export const DOOR_HEIGHT = 2.0;
+
 /** A seat pad, its height, and the back that makes it read as a chair. */
 const SEAT_PAD = 0.45;
 const PAD_THICKNESS = 0.06;
@@ -193,8 +201,8 @@ export function doorMesh(width: number, colour: number, view: '2D' | '3D'): THRE
     return group;
   }
 
-  const leaf = solid(new THREE.BoxGeometry(0.04, width, 2.0), colour);
-  leaf.position.set(0, width / 2, 1.0);
+  const leaf = solid(new THREE.BoxGeometry(0.04, width, DOOR_HEIGHT), colour);
+  leaf.position.set(0, width / 2, DOOR_HEIGHT / 2);
   group.add(leaf);
   return group;
 }
@@ -231,5 +239,121 @@ export function partitionMesh(
     segment.rotation.z = Math.atan2(dy, dx);
     group.add(segment);
   }
+  return group;
+}
+
+/** Where a wall is interrupted: an edge of the ring, and the span of it a door occupies. */
+export interface WallOpening {
+  edgeIdx: number;
+  /** Start and end along that edge, 0..1. */
+  from: number;
+  to: number;
+}
+
+/**
+ * A room's walls, with holes where its doors are.
+ *
+ * <p>The walls used to be one extruded ring with an inset ring punched out of it: correct
+ * as a shape, and solid all the way round, so a door was a leaf standing in front of an
+ * unbroken wall. You could see it was meant to be a door and also see that you could not
+ * walk through it.
+ *
+ * <p>Built per edge instead, in the pieces BETWEEN the openings, so the gap is real.
+ * Above each opening a lintel carries the wall on across the top, because a hole from
+ * floor to ceiling is not a door — it is a missing wall. Short posts at the corners cover
+ * the mitre that per-edge boxes do not make for themselves.
+ */
+export function roomWalls(
+  ring: ReadonlyArray<{ x: number; y: number }>,
+  height: number,
+  thickness: number,
+  colour: number,
+  openings: readonly WallOpening[],
+): THREE.Group {
+  const group = new THREE.Group();
+  if (ring.length < 2) return group;
+
+  const material = new THREE.MeshStandardMaterial({
+    color: colour, roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
+  });
+  const piece = (length: number, tall: number, cx: number, cy: number, cz: number, angle: number) => {
+    if (length <= 1e-6 || tall <= 1e-6) return;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(length, thickness, tall), material);
+    mesh.position.set(cx, cy, cz);
+    mesh.rotation.z = angle;
+    group.add(mesh);
+  };
+
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % ring.length]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-6) continue;
+    const angle = Math.atan2(dy, dx);
+
+    // Rings are counter-clockwise, so the inside is to the LEFT of the way the edge runs.
+    // Pushing the wall half its thickness that way keeps the room's floor area honest:
+    // straddling the outline would quietly eat half a wall's width of floor all round.
+    const nx = -dy / length;
+    const ny = dx / length;
+    const at = (t: number) => ({
+      x: a.x + dx * t + nx * (thickness / 2),
+      y: a.y + dy * t + ny * (thickness / 2),
+    });
+
+    const holes = openings
+      .filter((o) => o.edgeIdx === i)
+      .map((o) => [Math.max(0, Math.min(o.from, o.to)), Math.min(1, Math.max(o.from, o.to))] as const)
+      .sort((p, q) => p[0] - q[0]);
+
+    let cursor = 0;
+    for (const [from, to] of holes) {
+      if (from > cursor) {
+        const mid = at((cursor + from) / 2);
+        piece((from - cursor) * length, height, mid.x, mid.y, height / 2, angle);
+      }
+      // The lintel: wall above the opening, so the hole is a doorway and not a gap.
+      if (height > DOOR_HEIGHT) {
+        const mid = at((from + to) / 2);
+        piece(
+          (to - from) * length, height - DOOR_HEIGHT,
+          mid.x, mid.y, DOOR_HEIGHT + (height - DOOR_HEIGHT) / 2, angle,
+        );
+      }
+      cursor = Math.max(cursor, to);
+    }
+    if (cursor < 1) {
+      const mid = at((cursor + 1) / 2);
+      piece((1 - cursor) * length, height, mid.x, mid.y, height / 2, angle);
+    }
+  }
+
+  // Corner posts. Per-edge boxes meet at an angle and leave a wedge of daylight at every
+  // corner; a post the thickness of the wall fills it without needing a mitre.
+  //
+  // Only where the wall actually turns, though. A circular room tessellates into about
+  // seventy edges that each bend by five degrees, and a post at every one of them would
+  // be seventy meshes covering a gap too small to see — on a graph that is rebuilt on
+  // every edit.
+  const TURN = 0.09; // radians, about five degrees
+  for (let i = 0; i < ring.length; i++) {
+    const prev = ring[(i - 1 + ring.length) % ring.length]!;
+    const here = ring[i]!;
+    const next = ring[(i + 1) % ring.length]!;
+    const incoming = Math.atan2(here.y - prev.y, here.x - prev.x);
+    const outgoing = Math.atan2(next.y - here.y, next.x - here.x);
+    let turn = outgoing - incoming;
+    while (turn > Math.PI) turn -= 2 * Math.PI;
+    while (turn < -Math.PI) turn += 2 * Math.PI;
+    if (Math.abs(turn) < TURN) continue;
+
+    const post = new THREE.Mesh(new THREE.BoxGeometry(thickness, thickness, height), material);
+    post.position.set(here.x, here.y, height / 2);
+    post.rotation.z = incoming + turn / 2;
+    group.add(post);
+  }
+
   return group;
 }

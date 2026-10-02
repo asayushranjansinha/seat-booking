@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import type { SceneJson, ShapeJson } from '@/api/types';
 import type { Selection, SelectionItem } from '@/state/editorStore';
-import { footprintGeometry, outlinePoints, ringFor, wallGeometry } from './shapeToThree';
-import { chairMesh, doorMesh, partitionMesh, tableMesh } from './furniture';
+import { footprintGeometry, outlinePoints, ringFor } from './shapeToThree';
+import { chairMesh, doorMesh, partitionMesh, roomWalls, tableMesh } from './furniture';
 import type { Drawing } from '@/state/editorStore';
 
 /**
@@ -12,7 +12,10 @@ import type { Drawing } from '@/state/editorStore';
  * booked and free states differ in BRIGHTNESS as well as hue, since red and green are
  * the commonest colour-blindness confusion and a seat plan is read at a glance.
  */
-export const COLORS = {
+export /** Wall thickness in metres, shared by the 3D walls and the doors that interrupt them. */
+const WALL_THICKNESS = 0.12;
+
+const COLORS = {
   roomFill: 0x222834,
   roomFillSelected: 0x2b3444,
   roomEdge: 0x414a5c,
@@ -27,6 +30,8 @@ export const COLORS = {
   gate: 0xf0c24a,
   emergency: 0xe0646f,
   partition: 0x8792a6,
+  wall: 0x2b3340,
+  cabinWall: 0x3a3350,
   cabinFill: 0x332b45,
   cabinEdge: 0x8f7ad1,
   tableLip: 0x2f3f55,
@@ -149,9 +154,21 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     );
 
     if (view === '3D') {
-      group.add(new THREE.Mesh(
-        wallGeometry(room.shape, room.height),
-        new THREE.MeshStandardMaterial({ color: 0x2b3340, side: THREE.DoubleSide }),
+      // The ring is wanted here anyway for the doors, and the walls are now built from
+      // the same one, so a door's opening cannot land anywhere but on its own wall.
+      const outline = ringFor(room.shape);
+      group.add(roomWalls(
+        outline,
+        room.height,
+        WALL_THICKNESS,
+        cabin ? COLORS.cabinWall : COLORS.wall,
+        room.gates.map((gate) => {
+          const a = outline[gate.wallEdgeIdx % outline.length];
+          const b = outline[(gate.wallEdgeIdx + 1) % outline.length];
+          const length = a && b ? Math.hypot(b.x - a.x, b.y - a.y) : 0;
+          const half = length > 0 ? gate.width / 2 / length : 0;
+          return { edgeIdx: gate.wallEdgeIdx, from: gate.offsetT - half, to: gate.offsetT + half };
+        }),
       ));
       // A thin floor so the room reads as a space rather than a hollow outline.
       const floor = flatMesh(room.shape, COLORS.roomFill, 0);
