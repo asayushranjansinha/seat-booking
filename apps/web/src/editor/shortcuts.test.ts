@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveShortcut, type KeyEventLike } from './shortcuts';
+import { keyForTool, resolveShortcut, type KeyEventLike } from './shortcuts';
 
 const press = (key: string, mods: Partial<KeyEventLike> = {}): KeyEventLike => ({
   key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...mods,
@@ -12,7 +12,29 @@ describe('resolveShortcut', () => {
     // switched tool and paste could never run.
     expect(resolveShortcut(press('v', { metaKey: true }), true)).toEqual({ kind: 'paste' });
     expect(resolveShortcut(press('v', { ctrlKey: true }), true)).toEqual({ kind: 'paste' });
-    expect(resolveShortcut(press('v'), true)).toEqual({ kind: 'selectTool' });
+    expect(resolveShortcut(press('v'), true)).toEqual({ kind: 'tool', tool: 'SELECT' });
+  });
+
+  it('picks a tool by its digit', () => {
+    expect(resolveShortcut(press('1'), true)).toEqual({ kind: 'tool', tool: 'SELECT' });
+    expect(resolveShortcut(press('5'), true)).toEqual({ kind: 'tool', tool: 'TABLE_RECT' });
+    expect(resolveShortcut(press('8'), true)).toEqual({ kind: 'tool', tool: 'PARTITION' });
+    expect(resolveShortcut(press('9'), true)).toBeNull();
+  });
+
+  it('offers the digit, not V, as a tool\u2019s printed shortcut', () => {
+    // Two keys select the pointer; the button has room for one. The digit is the one that
+    // matches every other button in the rail.
+    expect(keyForTool('SELECT')).toBe('1');
+    expect(keyForTool('ROOM_POLY')).toBe('4');
+  });
+
+  it('separates duplicate from copy and from select-all', () => {
+    expect(resolveShortcut(press('d', { metaKey: true }), true)).toEqual({ kind: 'duplicate' });
+    expect(resolveShortcut(press('a', { metaKey: true }), true)).toEqual({ kind: 'selectAll' });
+    // Selecting is harmless on a published layout; duplicating into one is not.
+    expect(resolveShortcut(press('a', { metaKey: true }), false)).toEqual({ kind: 'selectAll' });
+    expect(resolveShortcut(press('d', { metaKey: true }), false)).toBeNull();
   });
 
   it('does not paste into a layout that cannot be edited', () => {

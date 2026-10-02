@@ -204,6 +204,35 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
     }
   }, [floorId, loadScene, refreshBuildings]);
 
+  // The buttons and the shortcuts must be the same action, not two implementations that
+  // drift. Both paths call these.
+  const hasClipboard = useEditorStore((s) => s.clipboardSize > 0);
+
+  const copy = useCallback(() => {
+    const clip = useEditorStore.getState().copySelection();
+    if (!clip) {
+      toast.info('Nothing to copy', { description: 'Select a table or a room first.' });
+      return false;
+    }
+    const n = clip.rooms.length + clip.tables.length;
+    toast.success(n === 1 ? 'Copied' : `${n} things copied`, {
+      description: 'Point where you want them and press \u2318V.',
+    });
+    return true;
+  }, []);
+
+  const paste = useCallback(() => {
+    if (!useEditorStore.getState().pasteClipboard()) {
+      toast.info('Nothing to paste', { description: 'Select a table or a room and copy it first.' });
+    }
+  }, []);
+
+  const duplicate = useCallback(() => {
+    if (!useEditorStore.getState().duplicateSelection()) {
+      toast.info('Nothing to duplicate', { description: 'Select a table or a room first.' });
+    }
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -219,6 +248,7 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
         case 'cancel':
           cancelDrawing();
           setTool('SELECT');
+          store.setSelection([]);
           return;
         case 'undo':
           e.preventDefault();
@@ -232,28 +262,28 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
           e.preventDefault();
           deleteSelected();
           return;
-        case 'selectTool':
-          setTool('SELECT');
+        case 'tool':
+          setTool(action.tool);
           return;
-        case 'copy': {
-          const clip = store.copySelection();
+        case 'selectAll':
+          e.preventDefault();
+          store.selectAll();
+          return;
+        case 'duplicate':
+          e.preventDefault();
+          duplicate();
+          return;
+        case 'copy':
           // No preventDefault when there is nothing to copy: the person is probably
           // trying to copy text somewhere on the page, and stealing that would be rude.
-          if (!clip) return;
-          e.preventDefault();
-          const n = clip.rooms.length + clip.tables.length;
-          toast.success(n === 1 ? 'Copied' : `${n} things copied`, {
-            description: 'Point where you want them and press \u2318V.',
-          });
+          if (useEditorStore.getState().selection.length > 0) {
+            e.preventDefault();
+            copy();
+          }
           return;
-        }
         case 'paste':
           e.preventDefault();
-          if (!store.pasteClipboard()) {
-            toast.info('Nothing to paste', {
-              description: 'Select a table or a room and press \u2318C first.',
-            });
-          }
+          paste();
           return;
         case 'nudge': {
           // A drag cannot reliably move something by one grid square, and on a trackpad
@@ -271,7 +301,7 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canEdit, deleteSelected, setTool, cancelDrawing]);
+  }, [canEdit, deleteSelected, setTool, cancelDrawing, copy, paste, duplicate]);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -307,6 +337,10 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
               canEdit={!!canEdit}
               noLayout={noLayout}
               canStart={isAdmin}
+              hasClipboard={hasClipboard}
+              onCopy={copy}
+              onPaste={paste}
+              onDuplicate={duplicate}
             />
           )}
 

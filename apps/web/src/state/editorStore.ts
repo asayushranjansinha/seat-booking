@@ -96,6 +96,12 @@ interface EditorState extends UndoableState {
    * condition the canvas never checked.
    */
   editable: boolean;
+  /**
+   * How many things the clipboard holds, so a Paste button can say whether it will do
+   * anything. The clip itself stays out of the store — see `clipboard` below — but its
+   * size has to be observable or the button cannot disable itself.
+   */
+  clipboardSize: number;
   drawing: Drawing;
   /** World position of the pointer, for the live dimension readout. */
   cursor: { x: number; y: number } | null;
@@ -166,6 +172,15 @@ interface EditorState extends UndoableState {
    * can say which rather than appearing to do nothing.
    */
   pasteClipboard: () => boolean;
+  /**
+   * Copy and immediately put down a copy, offset from the original.
+   *
+   * <p>Separate from copy-then-paste because it must not disturb the clipboard: someone
+   * who duplicates a table still expects their earlier copy to be what Cmd+V puts down.
+   */
+  duplicateSelection: () => boolean;
+  /** Hold every room and table on the floor. Seats are left out; there are hundreds. */
+  selectAll: () => void;
   clearSeatOverride: (seatId: string) => void;
   deleteSelected: () => void;
   addRoom: (shape: ShapeJson, at: { x: number; y: number }) => void;
@@ -357,6 +372,7 @@ export const useEditorStore = create<EditorState>()(
       selection: [],
       tool: 'SELECT',
       editable: false,
+      clipboardSize: 0,
       violations: [],
       view: '2D',
       gridSnap: 0.25,
@@ -435,6 +451,17 @@ export const useEditorStore = create<EditorState>()(
           let scene = state.scene;
           const regenerateFor = new Set<string>();
 
+          // A table's position is stored inside its room, so moving the room already
+          // carries it. Moving it again because it is also selected would send it twice
+          // as far as everything else — the one way a group drag can come apart. Same for
+          // a seat whose table or room is moving.
+          const movingRooms = new Set(
+            state.selection.filter((x) => x.type === 'room').map((x) => x.id),
+          );
+          const movingTables = new Set(
+            state.selection.filter((x) => x.type === 'furniture').map((x) => x.id),
+          );
+
           for (const item of state.selection) {
             if (item.type === 'room') {
               scene = updateRoom(scene, item.id, (r) => ({
@@ -445,6 +472,7 @@ export const useEditorStore = create<EditorState>()(
               // world delta has to be turned into that frame or a group dragged inside a
               // rotated room would shear instead of moving.
               const table = scene.furniture.find((f) => f.id === item.id);
+              if (table && movingRooms.has(table.roomId)) continue;
               const room = scene.rooms.find((r) => r.id === table?.roomId);
               const local = room ? rotateDelta(dx, dy, -room.transform.rot) : { x: dx, y: dy };
               scene = updateFurniture(scene, item.id, (f) => ({
@@ -453,6 +481,8 @@ export const useEditorStore = create<EditorState>()(
             } else {
               const seat = scene.seats.find((s) => s.id === item.id);
               if (!seat) continue;
+              if (movingRooms.has(seat.roomId)) continue;
+              if (seat.tableId && movingTables.has(seat.tableId)) continue;
               const table = scene.furniture.find((f) => f.id === seat.tableId);
               const room = scene.rooms.find((r) => r.id === seat.roomId);
               const rot = (room?.transform.rot ?? 0) + (table?.transform.rot ?? 0);
@@ -553,7 +583,10 @@ export const useEditorStore = create<EditorState>()(
         const state = get();
         if (!state.scene) return null;
         const clip = extract(state.scene, state.selection);
-        if (clip) clipboard = clip;
+        if (clip) {
+          clipboard = clip;
+          set({ clipboardSize: clip.rooms.length + clip.tables.length });
+        }
         return clip;
       },
 
@@ -568,6 +601,28 @@ export const useEditorStore = create<EditorState>()(
         if (!result) return false;
         set({ scene: result.scene, selection: result.selection, dirty: true });
         return true;
+      },
+
+      duplicateSelection: () => {
+        const state = get();
+        if (!state.scene) return false;
+        const clip = extract(state.scene, state.selection);
+        if (!clip) return false;
+        const result = pasteClip(state.scene, clip, null);
+        if (!result) return false;
+        set({ scene: result.scene, selection: result.selection, dirty: true });
+        return true;
+      },
+
+      selectAll: () => {
+        const scene = get().scene;
+        if (!scene) return;
+        set({
+          selection: [
+            ...scene.rooms.map((r) => ({ type: 'room' as const, id: r.id })),
+            ...scene.furniture.map((f) => ({ type: 'furniture' as const, id: f.id })),
+          ],
+        });
       },
 
       arrangeRoom: (roomId) => {

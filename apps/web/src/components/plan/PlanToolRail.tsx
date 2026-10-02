@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Shortcut } from '@/components/plan/Shortcut';
+import { keyForTool } from '@/editor/shortcuts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useEditorStore, type Tool } from '@/state/editorStore';
@@ -24,7 +26,7 @@ interface ToolSpec {
  * the eye goes to one group of two or three.
  */
 const GROUPS: ToolSpec[][] = [
-  [{ id: 'SELECT', label: 'Select', hint: 'Select, move, and use the grips to rotate or resize  ·  V', icon: MousePointer2 }],
+  [{ id: 'SELECT', label: 'Select', hint: 'Click to select. Shift-click to add. Drag a box on a room\u2019s floor to sweep up the tables inside it.', icon: MousePointer2 }],
   [
     { id: 'ROOM_RECT', label: 'Rectangular room', hint: 'Click the floor to place a rectangular room', icon: Square },
     { id: 'ROOM_CIRCLE', label: 'Round room', hint: 'Click the floor to place a circular room', icon: Circle },
@@ -74,8 +76,11 @@ export function PlanToolRail({ disabled }: { disabled: boolean }) {
                   <Icon className="size-4" />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right" className="max-w-[260px]">
-                <p className="font-medium">{label}</p>
+              <TooltipContent side="right" className="max-w-[280px]">
+                <p className="flex items-center font-medium">
+                  {label}
+                  <Shortcut keys={[keyForTool(id)]} />
+                </p>
                 <p className="text-muted-foreground">{hint}</p>
               </TooltipContent>
             </Tooltip>

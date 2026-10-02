@@ -93,6 +93,12 @@ export function EditorCanvas() {
     const el = host.current;
     if (!el) return;
 
+    // The scene graph is rebuilt when the STORE changes. The sweep box lives in a ref,
+    // because putting a rectangle that changes sixty times a second into the store would
+    // notify every subscriber for something only the canvas draws — so the handlers have
+    // to ask for the redraw themselves. Assigned once `rebuild` exists, below.
+    let requestRebuild = () => {};
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x161b24, 1);  // matches --canvas
@@ -418,6 +424,7 @@ export function EditorCanvas() {
         dragRef.current = {
           mode: 'marquee', from: world.clone(), to: world.clone(), room: pick.selection.id,
         };
+        marqueeRef.current = { from: { x: world.x, y: world.y }, to: { x: world.x, y: world.y } };
         renderer.domElement.setPointerCapture(event.pointerId);
         return;
       }
@@ -481,6 +488,7 @@ export function EditorCanvas() {
           from: { x: drag.from.x, y: drag.from.y },
           to: { x: world.x, y: world.y },
         };
+        requestRebuild();
         renderer.domElement.style.cursor = 'crosshair';
         return;
       }
@@ -509,9 +517,13 @@ export function EditorCanvas() {
         if (!moved) {
           // A press that went nowhere is a click, not an empty sweep. On a room it picks
           // the room; on bare floor it clears, which the pointerdown already did.
-          state.setSelection(drag.room ? [{ type: 'room', id: drag.room }] : []);
+          //
+          // Clear the box BEFORE touching the store: zustand notifies subscribers
+          // synchronously, so a rebuild triggered by setSelection would read this ref
+          // while it still held the box — and nothing afterwards would rebuild again.
           dragRef.current = null;
           marqueeRef.current = null;
+          state.setSelection(drag.room ? [{ type: 'room', id: drag.room }] : []);
           renderer.domElement.style.cursor = 'grab';
           renderer.domElement.releasePointerCapture?.(event.pointerId);
           return;
@@ -521,12 +533,14 @@ export function EditorCanvas() {
         // parts of a floor build one group.
         const existing = event.shiftKey ? state.selection : [];
         const keys = new Set(existing.map((x) => `${x.type}:${x.id}`));
+        // Cleared first, for the reason above.
+        dragRef.current = null;
+        marqueeRef.current = null;
         state.setSelection([
           ...existing,
           ...picked.filter((x: SelectionItem) => !keys.has(`${x.type}:${x.id}`)),
         ]);
-        dragRef.current = null;
-        marqueeRef.current = null;
+        requestRebuild(); // in case the selection did not actually change
         renderer.domElement.style.cursor = 'default';
         renderer.domElement.releasePointerCapture?.(event.pointerId);
         return;
@@ -637,6 +651,7 @@ export function EditorCanvas() {
       }
     };
 
+    requestRebuild = rebuild;
     const unsubscribe = useEditorStore.subscribe(rebuild);
     rebuild();
 

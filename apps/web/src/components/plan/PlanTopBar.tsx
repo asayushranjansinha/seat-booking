@@ -1,12 +1,16 @@
 'use client';
 
-import { Box, Check, CloudUpload, Loader2, Magnet, Redo2, Square, Undo2 } from 'lucide-react';
+import {
+  Box, BoxSelect, Check, ClipboardPaste, CloudUpload, Copy, CopyPlus, Loader2, Magnet,
+  Redo2, Square, Trash2, Undo2,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useEditorStore } from '@/state/editorStore';
+import { Shortcut } from '@/components/plan/Shortcut';
 
 /**
  * State on the left, actions on the right.
@@ -23,11 +27,19 @@ export function PlanTopBar({
   canEdit,
   noLayout,
   canStart,
+  onCopy,
+  onPaste,
+  onDuplicate,
+  hasClipboard,
 }: {
   onValidate: () => void;
   onPublish: () => void;
   onCreateDraft: () => void;
   busy: string | null;
+  onCopy: () => void;
+  onPaste: () => void;
+  onDuplicate: () => void;
+  hasClipboard: boolean;
   canEdit: boolean;
   noLayout: boolean;
   canStart: boolean;
@@ -40,6 +52,9 @@ export function PlanTopBar({
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
   const drawing = useEditorStore((s) => s.drawing);
   const temporal = useEditorStore.temporal;
+  const held = useEditorStore((s) => s.selection.length);
+  const selectAll = useEditorStore((s) => s.selectAll);
+  const deleteSelected = useEditorStore((s) => s.deleteSelected);
 
   const canUndo = temporal.getState().pastStates.length > 0;
   const canRedo = temporal.getState().futureStates.length > 0;
@@ -86,19 +101,69 @@ export function PlanTopBar({
       <div className="ml-auto flex items-center gap-1">
         {canEdit && (
           <>
-            <IconButton label="Undo  ·  Cmd Z" disabled={!canUndo} onClick={() => temporal.getState().undo()}>
+            <IconButton label="Undo" keys={['Cmd', 'Z']} disabled={!canUndo}
+              onClick={() => temporal.getState().undo()}>
               <Undo2 className="size-4" />
             </IconButton>
-            <IconButton label="Redo  ·  Cmd Shift Z" disabled={!canRedo} onClick={() => temporal.getState().redo()}>
+            <IconButton label="Redo" keys={['Cmd', 'Shift', 'Z']} disabled={!canRedo}
+              onClick={() => temporal.getState().redo()}>
               <Redo2 className="size-4" />
             </IconButton>
             <IconButton
-              label={snapEnabled ? 'Snapping on — grid 0.25 m, angle 15°, walls and table edges' : 'Snapping off'}
+              label={snapEnabled ? 'Snapping on' : 'Snapping off'}
+              hint="Grid 0.25 m, angle 15°, walls and table edges"
               onClick={toggleSnap}
               active={snapEnabled}
             >
               <Magnet className="size-4" />
             </IconButton>
+            <Separator orientation="vertical" className="mx-1 h-6" />
+
+            <IconButton
+              label="Select all"
+              hint="Every room and table on this floor"
+              keys={['Cmd', 'A']}
+              onClick={selectAll}
+            >
+              <BoxSelect className="size-4" />
+            </IconButton>
+            <IconButton
+              label="Copy"
+              hint={held === 0 ? 'Select something first' : `Copies ${held === 1 ? 'it' : 'all of them'} with their seats`}
+              keys={['Cmd', 'C']}
+              disabled={held === 0}
+              onClick={onCopy}
+            >
+              <Copy className="size-4" />
+            </IconButton>
+            <IconButton
+              label="Paste"
+              hint="Lands where the pointer is, in whichever room is under it"
+              keys={['Cmd', 'V']}
+              disabled={!hasClipboard}
+              onClick={onPaste}
+            >
+              <ClipboardPaste className="size-4" />
+            </IconButton>
+            <IconButton
+              label="Duplicate"
+              hint="A copy beside the original, without touching the clipboard"
+              keys={['Cmd', 'D']}
+              disabled={held === 0}
+              onClick={onDuplicate}
+            >
+              <CopyPlus className="size-4" />
+            </IconButton>
+            <IconButton
+              label="Delete"
+              hint={held > 1 ? `Removes all ${held}` : 'Removes it, and anything inside it'}
+              keys={['Backspace']}
+              disabled={held === 0}
+              onClick={deleteSelected}
+            >
+              <Trash2 className="size-4" />
+            </IconButton>
+
             <Separator orientation="vertical" className="mx-1 h-6" />
           </>
         )}
@@ -137,9 +202,11 @@ export function PlanTopBar({
 }
 
 function IconButton({
-  label, children, onClick, disabled, active,
+  label, hint, keys, children, onClick, disabled, active,
 }: {
   label: string;
+  hint?: string;
+  keys?: string[];
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
@@ -159,7 +226,13 @@ function IconButton({
           {children}
         </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className="max-w-[260px]">{label}</TooltipContent>
+      <TooltipContent side="bottom" className="max-w-[280px]">
+        <p className="flex items-center font-medium">
+          {label}
+          {keys && <Shortcut keys={keys} />}
+        </p>
+        {hint && <p className="text-muted-foreground">{hint}</p>}
+      </TooltipContent>
     </Tooltip>
   );
 }
