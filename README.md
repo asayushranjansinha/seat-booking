@@ -20,6 +20,15 @@ cd apps/web && npm run dev            # :3000
 Sign in at http://localhost:3000 as `admin@demo.test` / `password`
 (`manager@demo.test` and `user@demo.test` exist with the same password).
 
+## Giving a demo
+
+`DEMO.md` is a 15-minute script with what to click and what to say. Two helpers:
+
+```bash
+./tools/demo-reset.sh    # back to 3 rooms, 4 tables, 27 seats, no bookings  (~25s)
+./tools/demo-race.sh     # 16 simultaneous bookings at one seat: 1 wins, 15 refused
+```
+
 ## Tests
 
 ```bash
