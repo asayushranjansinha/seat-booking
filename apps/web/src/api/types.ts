@@ -226,3 +226,10 @@ export interface BuildingSummaryJson {
   address: string | null;
   floors: FloorSummaryJson[];
 }
+
+/** One account offered on the sign-in page, in development only. */
+export interface DemoAccountJson {
+  email: string;
+  displayName: string;
+  role: 'ADMIN' | 'MANAGER' | 'USER';
+}

@@ -98,6 +98,8 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login", "/api/auth/refresh", "/api/auth/logout").permitAll()
+                        // Answers only on the development secret; see AuthController.
+                        .requestMatchers("/api/auth/demo-accounts").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         // Editing a layout is an admin act. Reading a published plan is
                         // not, because every role needs it to book.

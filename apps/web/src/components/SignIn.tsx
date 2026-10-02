@@ -1,24 +1,30 @@
 'use client';
 
 import { Building2, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@/api/client';
-import type { SessionJson } from '@/api/types';
+import type { DemoAccountJson, SessionJson } from '@/api/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-const DEMO = [
-  { email: 'admin@demo.test', role: 'Admin', can: 'draws the building' },
-  { email: 'manager@demo.test', role: 'Manager', can: 'books whole tables' },
-  { email: 'user@demo.test', role: 'User', can: 'books a seat' },
-];
+/** What each role can do, for the one-line description beside a name. */
+const WHAT_THEY_DO: Record<DemoAccountJson['role'], string> = {
+  ADMIN: 'draws the building',
+  MANAGER: 'books whole tables and cabins',
+  USER: 'books a seat',
+};
 
 export function SignIn({ onSignedIn }: { onSignedIn: (session: SessionJson) => void }) {
   const [email, setEmail] = useState('admin@demo.test');
   const [password, setPassword] = useState('password');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Fetched rather than hard-coded: the page listed three accounts in markup, so adding
+  // people to the demo left them invisible to the person trying to sign in as one.
+  const [accounts, setAccounts] = useState<DemoAccountJson[]>([]);
+
+  useEffect(() => { void api.demoAccounts().then(setAccounts); }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -62,23 +68,31 @@ export function SignIn({ onSignedIn }: { onSignedIn: (session: SessionJson) => v
           </Button>
         </form>
 
-        <div className="space-y-2 rounded-xl border border-dashed p-4">
-          <p className="text-xs font-medium text-muted-foreground">
-            Demo accounts — password <code className="rounded bg-muted px-1 py-0.5">password</code>
-          </p>
-          {DEMO.map((account) => (
-            <button
-              key={account.email}
-              type="button"
-              onClick={() => setEmail(account.email)}
-              className="flex w-full items-baseline gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-accent"
-            >
-              <span className="font-medium">{account.role}</span>
-              <span className="text-muted-foreground">{account.can}</span>
-              <span className="ml-auto font-mono text-[10px] text-muted-foreground">{account.email}</span>
-            </button>
-          ))}
-        </div>
+        {accounts.length > 0 && (
+          <div className="space-y-1 rounded-xl border border-dashed p-4">
+            <p className="pb-1 text-xs font-medium text-muted-foreground">
+              Demo accounts — password <code className="rounded bg-muted px-1 py-0.5">password</code>
+            </p>
+            <div className="max-h-56 space-y-0.5 overflow-y-auto">
+              {accounts.map((account) => (
+                <button
+                  key={account.email}
+                  type="button"
+                  // Fills the password too. With eleven people to try, retyping the same
+                  // word each time is the part that makes switching accounts tedious.
+                  onClick={() => { setEmail(account.email); setPassword('password'); }}
+                  className="flex w-full items-baseline gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-accent"
+                >
+                  <span className="font-medium">{account.displayName}</span>
+                  <span className="text-muted-foreground">{WHAT_THEY_DO[account.role]}</span>
+                  <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
+                    {account.email}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );

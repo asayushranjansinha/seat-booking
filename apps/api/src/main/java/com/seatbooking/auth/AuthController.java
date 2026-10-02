@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.Valid;
 import java.time.Duration;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
@@ -54,6 +56,33 @@ public class AuthController {
                     u.getRole().name(), u.getOrganizationId());
         }
     }
+
+    /**
+     * The accounts a demo can sign in as.
+     *
+     * <p>Handing out a list of real people's addresses is not something a product should
+     * do, so this answers only while the application is running on the DEVELOPMENT JWT
+     * secret. That is a condition a real deployment already cannot meet — the application
+     * refuses to start under the prod profile without a real secret — so there is no new
+     * flag here for anyone to forget to turn off.
+     *
+     * <p>It exists because the sign-in page listed three accounts in hard-coded HTML, and
+     * a demo with more people in it than that had no way to show them.
+     */
+    @GetMapping("/demo-accounts")
+    public ResponseEntity<List<DemoAccount>> demoAccounts() {
+        if (!AuthProperties.DEV_SECRET.equals(properties.jwtSecret())) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(users.findAll().stream()
+                .filter(AppUser::isEnabled)
+                .sorted(Comparator.comparing((AppUser u) -> u.getRole().ordinal())
+                        .thenComparing(AppUser::getEmail))
+                .map(u -> new DemoAccount(u.getEmail(), u.getDisplayName(), u.getRole().name()))
+                .toList());
+    }
+
+    public record DemoAccount(String email, String displayName, String role) {}
 
     @PostMapping("/login")
     public ResponseEntity<SessionResponse> login(@Valid @RequestBody LoginRequest request) {

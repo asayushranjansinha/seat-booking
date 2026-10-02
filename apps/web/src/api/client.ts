@@ -1,4 +1,5 @@
 import type {
+  DemoAccountJson,
   BookingJson,
   BuildingSummaryJson,
   FloorSummaryJson,
@@ -138,6 +139,23 @@ async function request<T>(
 }
 
 export const api = {
+  /**
+   * Accounts a demo can sign in as, or nothing.
+   *
+   * <p>The server answers this only while it is running on the development secret, so a
+   * real deployment returns 404 and the page falls back to showing no list at all. The
+   * failure is swallowed deliberately: an absent list is the CORRECT state in production,
+   * not an error worth telling anyone about.
+   */
+  async demoAccounts(): Promise<DemoAccountJson[]> {
+    try {
+      const { data } = await request<DemoAccountJson[]>('/api/auth/demo-accounts');
+      return data;
+    } catch {
+      return [];
+    }
+  },
+
   async login(email: string, password: string): Promise<SessionJson> {
     const { data } = await request<SessionJson>('/api/auth/login', {
       method: 'POST',
