@@ -239,6 +239,23 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
         deleteSelected();
       } else if (e.key.toLowerCase() === 'v') {
         setTool('SELECT');
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+        const clip = useEditorStore.getState().copySelection();
+        if (clip) {
+          e.preventDefault();
+          toast.success(clip.kind === 'room' ? 'Room copied' : 'Table copied', {
+            description: 'Point where you want it and press ⌘V.',
+          });
+        }
+        // No preventDefault when there is nothing to copy: the person is probably trying
+        // to copy text somewhere on the page, and stealing that would be rude.
+      } else if (canEdit && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        if (!useEditorStore.getState().pasteClipboard()) {
+          toast.info('Nothing to paste', {
+            description: 'Select a table or a room and press ⌘C first.',
+          });
+        }
       } else if (canEdit && NUDGES[e.key]) {
         // A drag cannot reliably move something by one grid square, and on a trackpad it
         // often cannot move it by a small amount at all. Arrows can.
@@ -309,8 +326,10 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
           {mode === 'PLAN' ? (
             <InspectorPanel
               noLayout={noLayout}
+              noEstate={buildings.length === 0}
               canStart={isAdmin}
               onStart={createDraft}
+              onAddBuilding={() => setEstateOpen(true)}
               starting={busy === 'drafting'}
             />
           ) : (

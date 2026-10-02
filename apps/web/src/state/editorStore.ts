@@ -9,6 +9,8 @@ import {
   type SeatOverride,
 } from '@seat-booking/geometry';
 import { arrangeTablesEvenly, type ArrangeResult } from '@/editor/arrange';
+import { extract, nextSeatPrefix, paste as pasteClip, type Clip } from '@/editor/clipboard';
+import { pointer } from '@/editor/pointer';
 import type {
   FurnitureJson,
   GateJson,
@@ -124,6 +126,16 @@ interface EditorState extends UndoableState {
    * change itself is one entry in history, because "arrange the room" is one decision.
    */
   arrangeRoom: (roomId: string) => ArrangeResult;
+
+  /** Take a copy of what is selected. Returns what it took, or null if nothing can be. */
+  copySelection: () => Clip | null;
+  /**
+   * Put the copy down where the pointer is.
+   *
+   * <p>Returns false when there is nothing to paste or nowhere to put it, so the caller
+   * can say which rather than appearing to do nothing.
+   */
+  pasteClipboard: () => boolean;
   clearSeatOverride: (seatId: string) => void;
   deleteSelected: () => void;
   addRoom: (shape: ShapeJson, at: { x: number; y: number }) => void;
@@ -152,6 +164,16 @@ const uuid = (): string => crypto.randomUUID();
  * as degenerate, and the room can never be published — with nothing on screen to show why.
  */
 const SAME_CORNER = 0.08;
+
+/**
+ * What was last copied.
+ *
+ * <p>Module-level rather than store state on purpose: a clipboard is not part of the
+ * document. Putting it in the store would make copying something an undoable step, and
+ * would empty it every time a different floor was loaded — neither of which is how a
+ * clipboard has ever behaved.
+ */
+let clipboard: Clip | null = null;
 
 /** Whether the current drag gesture has already contributed its one history entry. */
 let dragHistoryRecorded = false;
@@ -433,6 +455,27 @@ export const useEditorStore = create<EditorState>()(
           state.scene ? { ...state, scene: regenerate(state.scene, tableId), dirty: true } : state,
         ),
 
+      copySelection: () => {
+        const state = get();
+        if (!state.scene) return null;
+        const clip = extract(state.scene, state.selection);
+        if (clip) clipboard = clip;
+        return clip;
+      },
+
+      pasteClipboard: () => {
+        const state = get();
+        if (!state.scene || !clipboard) return false;
+        const result = pasteClip(
+          state.scene,
+          clipboard,
+          pointer.overCanvas ? { x: pointer.x, y: pointer.y } : null,
+        );
+        if (!result) return false;
+        set({ scene: result.scene, selection: result.selection, dirty: true });
+        return true;
+      },
+
       arrangeRoom: (roomId) => {
         const current = get().scene;
         if (!current) return { moves: [], crowded: [] };
@@ -648,7 +691,11 @@ export const useEditorStore = create<EditorState>()(
               ? { kind: 'RADIAL', count: 6, startAngle: 0, clearance: 0.45 }
               : { kind: 'PERIMETER_EVEN', count: 8, startOffset: 0, clearance: 0.45 };
 
-          const prefix = String.fromCharCode(65 + (state.scene.furniture.length % 26));
+          // Was (furniture count % 26), which hands the 27th table the letter A and
+          // duplicates every code the first table owns; seat_code_unique_per_version then
+          // refuses the save at publish time, with 26 tables already drawn. Choose by what
+          // is actually unused instead.
+          const prefix = nextSeatPrefix(state.scene);
           const seats: SeatJson[] = placeSeats({
             shape: shapeFromJson(shape),
             clearance: placement.clearance,

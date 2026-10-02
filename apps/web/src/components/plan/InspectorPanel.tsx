@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  AlignHorizontalDistributeCenter, Armchair, Info, LayoutGrid, Loader2, PencilRuler, Pin,
+  AlignHorizontalDistributeCenter, Armchair, Building2, Info, LayoutGrid, Loader2, PencilRuler, Pin,
   PinOff, Table2, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -28,16 +28,24 @@ const num = (v: string, fallback: number) => {
  * selection now gets only its own controls, under a heading that says what is selected.
  */
 export function InspectorPanel({
-  noLayout, canStart, onStart, starting,
+  noLayout, noEstate, canStart, onStart, onAddBuilding, starting,
 }: {
   noLayout: boolean;
+  noEstate: boolean;
   canStart: boolean;
   onStart: () => void;
+  onAddBuilding: () => void;
   starting: boolean;
 }) {
   const scene = useEditorStore((s) => s.scene);
   const selection = useEditorStore((s) => s.selection);
   const canEdit = scene?.status === 'DRAFT';
+
+  // The very first screen anyone sees on a fresh install, and the one that was blank:
+  // no building means no floor, so there is no layout to be empty and the empty-floor
+  // panel never ran. An admin was left with a grid, a disabled toolbar and no sentence
+  // anywhere telling them a building comes first.
+  if (noEstate) return <NoEstate canStart={canStart} onAdd={onAddBuilding} />;
 
   // A floor with nothing on it is a normal state, not an error. Rendering nothing here
   // leaves an admin staring at an empty grid with no way to begin.
@@ -121,6 +129,45 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
       <span className="text-muted-foreground">{label}</span>
       <span className="tabular font-medium">{value}</span>
     </div>
+  );
+}
+
+function NoEstate({ canStart, onAdd }: { canStart: boolean; onAdd: () => void }) {
+  return (
+    <Shell icon={<Building2 className="size-4" />} title="No buildings yet" subtitle="Nothing to plan or book">
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        {canStart
+          ? 'A seat lives on a floor, and a floor lives in a building — so a building is the first thing to make.'
+          : 'Nobody has added a building yet. An admin needs to create one before there is anything to book.'}
+      </p>
+
+      {canStart && (
+        <>
+          <Button className="w-full" onClick={onAdd}>
+            <Building2 className="size-4" />
+            Add a building
+          </Button>
+
+          <Separator />
+
+          <ol className="space-y-2.5 text-sm text-muted-foreground">
+            {[
+              'Add a building and give it an address',
+              'Add a floor to it — Ground, Level 1, and so on',
+              'Draw the rooms, then drop tables in them',
+              'Publish, and the floor becomes bookable',
+            ].map((step, i) => (
+              <li key={step} className="flex gap-2.5">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">
+                  {i + 1}
+                </span>
+                <span className="leading-snug">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </Shell>
   );
 }
 

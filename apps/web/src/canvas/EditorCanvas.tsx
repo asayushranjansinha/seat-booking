@@ -5,6 +5,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useEffect, useRef } from 'react';
 import { applyTransform, composeTransform, invertTransform } from '@seat-booking/geometry';
 import { snapValue, useEditorStore, type Selection } from '@/state/editorStore';
+import { pointer as pointerWorld } from '@/editor/pointer';
 import type { SceneJson, TransformJson } from '@/api/types';
 import { buildSceneGraph, disposeGraph, type HandleData, type PickData } from './sceneGraph';
 import { ringFor } from './shapeToThree';
@@ -345,6 +346,10 @@ export function EditorCanvas() {
       const world = toWorld(event);
       const drag = dragRef.current;
 
+      pointerWorld.x = world.x;
+      pointerWorld.y = world.y;
+      pointerWorld.overCanvas = true;
+
       if (!drag) {
         // Nothing on a canvas announces itself as draggable the way a button announces
         // itself as clickable. The cursor is the only affordance there is, so it has to
@@ -398,6 +403,10 @@ export function EditorCanvas() {
       renderer.domElement.releasePointerCapture?.(event.pointerId);
     };
 
+    // Once the pointer is off the canvas a paste has nowhere to aim, and the last place
+    // it was seen is not where the person is looking any more.
+    const onPointerLeave = () => { pointerWorld.overCanvas = false; };
+    renderer.domElement.addEventListener('pointerleave', onPointerLeave);
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
@@ -503,6 +512,7 @@ export function EditorCanvas() {
       cancelAnimationFrame(raf);
       unsubscribe();
       observer.disconnect();
+      renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);
       renderer.domElement.removeEventListener('pointerup', onPointerUp);
