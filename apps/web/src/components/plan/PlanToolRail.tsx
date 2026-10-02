@@ -1,7 +1,8 @@
 'use client';
 
 import {
-  Circle, DoorOpen, MousePointer2, PenTool, RectangleHorizontal, Square, SplitSquareVertical,
+  BoxSelect, Circle, DoorOpen, MousePointer2, PenTool, RectangleHorizontal, Square,
+  SplitSquareVertical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -26,7 +27,20 @@ interface ToolSpec {
  * the eye goes to one group of two or three.
  */
 const GROUPS: ToolSpec[][] = [
-  [{ id: 'SELECT', label: 'Select', hint: 'Click to select. Shift-click to add. Drag a box on a room\u2019s floor to sweep up the tables inside it.', icon: MousePointer2 }],
+  [
+    {
+      id: 'SELECT',
+      label: 'Select',
+      hint: 'Click to pick one thing, shift-click to add another. Drag anything to move it, or its grips to resize and turn it.',
+      icon: MousePointer2,
+    },
+    {
+      id: 'MARQUEE',
+      label: 'Sweep a box',
+      hint: 'Drag a box over the tables you want. Hold Shift to sweep again and add to the group. Returns to Select when you let go.',
+      icon: BoxSelect,
+    },
+  ],
   [
     { id: 'ROOM_RECT', label: 'Rectangular room', hint: 'Click the floor to place a rectangular room', icon: Square },
     { id: 'ROOM_CIRCLE', label: 'Round room', hint: 'Click the floor to place a circular room', icon: Circle },

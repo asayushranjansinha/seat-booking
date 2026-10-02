@@ -31,19 +31,9 @@ const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
  */
 /** A seat sits on a table which sits in a room; the innermost one is always the target. */
 const SPECIFICITY = { seat: 0, furniture: 1, room: 2 } as const;
-const specificityOf = (t: 'seat' | 'furniture' | 'room') => SPECIFICITY[t];
 
 /** How far a press may wander, in metres, and still count as a click rather than a sweep. */
 const CLICK_SLOP = 0.1;
-
-/** How close to a wall counts as grabbing the room itself rather than its floor. */
-const ROOM_EDGE = 0.6;
-
-/** Is this point near enough to one of the room's own walls to mean "move the room"? */
-function onRoomEdge(scene: SceneJson, p: { x: number; y: number }, roomId: string): boolean {
-  const wall = nearestWall(scene, p, ROOM_EDGE);
-  return wall?.roomId === roomId;
-}
 
 /**
  * Which tables a swept box caught.
@@ -197,7 +187,7 @@ export function EditorCanvas() {
     };
 
     /** What the pointer is over right now, expressed as a CSS cursor. */
-    const hoverCursor = (state: ReturnType<typeof useEditorStore.getState>, _world: THREE.Vector2): string => {
+    const hoverCursor = (state: ReturnType<typeof useEditorStore.getState>): string => {
       if (state.mode === 'PLAN' && state.tool !== 'SELECT') {
         return state.editable ? 'crosshair' : 'not-allowed';
       }
@@ -208,18 +198,6 @@ export function EditorCanvas() {
       const overEntity = hits.some((h) => (h.object.userData as { pick?: PickData }).pick);
       if (state.mode === 'BOOK') return overEntity ? 'pointer' : 'default';
       if (!overHandle && !overEntity) return 'default';
-      // Over a room's floor with nothing more specific under the pointer: a press here
-      // sweeps a box rather than moving anything, so say so.
-      if (state.editable && state.scene) {
-        const innermost = hits
-          .map((h) => (h.object.userData as { pick?: PickData }).pick)
-          .filter((x): x is PickData => !!x)
-          .sort((a, b) => specificityOf(a.selection.type) - specificityOf(b.selection.type))[0];
-        if (innermost?.selection.type === 'room'
-            && !onRoomEdge(state.scene, { x: _world.x, y: _world.y }, innermost.selection.id)) {
-          return 'crosshair';
-        }
-      }
       // 3D selects but never moves. Promising a grab here is how someone ends up dragging
       // a chair around a picture of a room and concluding the editor is broken.
       if (state.view === '3D') return 'pointer';
@@ -280,6 +258,17 @@ export function EditorCanvas() {
       const s = state.scene;
       if (!s) return;
       const world = toWorld(event);
+
+      // The sweep is a tool, so it takes the press outright. Nothing underneath matters:
+      // dragging a box over a room must not also start moving the room.
+      if (state.mode === 'PLAN' && state.tool === 'MARQUEE' && state.editable && state.view === '2D') {
+        if (!event.shiftKey) state.setSelection([]);
+        dragRef.current = { mode: 'marquee', from: world.clone(), to: world.clone(), room: null };
+        marqueeRef.current = { from: { x: world.x, y: world.y }, to: { x: world.x, y: world.y } };
+        requestRebuild();
+        renderer.domElement.setPointerCapture(event.pointerId);
+        return;
+      }
 
       if (state.mode === 'PLAN' && state.tool !== 'SELECT' && state.editable) {
         switch (state.tool) {
@@ -426,20 +415,6 @@ export function EditorCanvas() {
         return; // booking selects a seat; it never moves one
       }
 
-      // A room's floor covers everything inside it, so "press on empty floor" would only
-      // ever happen OUTSIDE a room — useless, because the tables worth sweeping up are
-      // all inside one. So a room is grabbed by its WALL and swept from its middle. Both
-      // gestures stay available with no mode to remember, and the cursor says which is
-      // which: crosshair over the floor, grab near an edge.
-      if (pick.selection.type === 'room' && state.editable && !onRoomEdge(s, world, pick.selection.id)) {
-        dragRef.current = {
-          mode: 'marquee', from: world.clone(), to: world.clone(), room: pick.selection.id,
-        };
-        marqueeRef.current = { from: { x: world.x, y: world.y }, to: { x: world.x, y: world.y } };
-        renderer.domElement.setPointerCapture(event.pointerId);
-        return;
-      }
-
       if (!alreadyHeld) state.setSelection([pick.selection]);
       // A published layout is a record of what people are booking against, not a
       // scratchpad. Letting it drag would move it on screen and then lose the move,
@@ -466,7 +441,7 @@ export function EditorCanvas() {
         // Nothing on a canvas announces itself as draggable the way a button announces
         // itself as clickable. The cursor is the only affordance there is, so it has to
         // say which of the three things is true here: draw, grab, or look.
-        renderer.domElement.style.cursor = hoverCursor(state, world);
+        renderer.domElement.style.cursor = hoverCursor(state);
         // Only track the cursor while a stroke is open; otherwise every mouse move would
         // rebuild the scene graph for nothing.
         if (state.drawing) state.setCursor({ x: world.x, y: world.y });
@@ -526,15 +501,13 @@ export function EditorCanvas() {
         const state = useEditorStore.getState();
         const moved = Math.hypot(drag.to.x - drag.from.x, drag.to.y - drag.from.y) > CLICK_SLOP;
         if (!moved) {
-          // A press that went nowhere is a click, not an empty sweep. On a room it picks
-          // the room; on bare floor it clears, which the pointerdown already did.
-          //
-          // Clear the box BEFORE touching the store: zustand notifies subscribers
-          // synchronously, so a rebuild triggered by setSelection would read this ref
-          // while it still held the box — and nothing afterwards would rebuild again.
+          // A press that went nowhere swept nothing. Clear the box BEFORE touching the
+          // store: zustand notifies subscribers synchronously, so a rebuild triggered by
+          // setSelection would read this ref while it still held the box, and nothing
+          // afterwards would rebuild again.
           dragRef.current = null;
           marqueeRef.current = null;
-          state.setSelection(drag.room ? [{ type: 'room', id: drag.room }] : []);
+          requestRebuild();
           renderer.domElement.style.cursor = 'grab';
           renderer.domElement.releasePointerCapture?.(event.pointerId);
           return;
@@ -551,6 +524,10 @@ export function EditorCanvas() {
           ...existing,
           ...picked.filter((x: SelectionItem) => !keys.has(`${x.type}:${x.id}`)),
         ]);
+        // Back to the pointer, so the group can be dragged straight away — the same
+        // courtesy every drawing tool here does. Shift means more sweeps are coming, so
+        // the tool stays put for those.
+        if (!event.shiftKey) state.setTool('SELECT');
         requestRebuild(); // in case the selection did not actually change
         renderer.domElement.style.cursor = 'default';
         renderer.domElement.releasePointerCapture?.(event.pointerId);

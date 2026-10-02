@@ -17,16 +17,17 @@ describe('resolveShortcut', () => {
 
   it('picks a tool by its digit', () => {
     expect(resolveShortcut(press('1'), true)).toEqual({ kind: 'tool', tool: 'SELECT' });
-    expect(resolveShortcut(press('5'), true)).toEqual({ kind: 'tool', tool: 'TABLE_RECT' });
-    expect(resolveShortcut(press('8'), true)).toEqual({ kind: 'tool', tool: 'PARTITION' });
-    expect(resolveShortcut(press('9'), true)).toBeNull();
+    expect(resolveShortcut(press('2'), true)).toEqual({ kind: 'tool', tool: 'MARQUEE' });
+    expect(resolveShortcut(press('6'), true)).toEqual({ kind: 'tool', tool: 'TABLE_RECT' });
+    expect(resolveShortcut(press('9'), true)).toEqual({ kind: 'tool', tool: 'PARTITION' });
+    expect(resolveShortcut(press('0'), true)).toBeNull();
   });
 
   it('offers the digit, not V, as a tool\u2019s printed shortcut', () => {
     // Two keys select the pointer; the button has room for one. The digit is the one that
     // matches every other button in the rail.
     expect(keyForTool('SELECT')).toBe('1');
-    expect(keyForTool('ROOM_POLY')).toBe('4');
+    expect(keyForTool('ROOM_POLY')).toBe('5');
   });
 
   it('separates duplicate from copy and from select-all', () => {

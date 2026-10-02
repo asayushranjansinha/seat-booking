@@ -44,13 +44,14 @@ export interface KeyEventLike {
 export const TOOL_KEYS: Record<string, Tool> = {
   '1': 'SELECT',
   v: 'SELECT',
-  '2': 'ROOM_RECT',
-  '3': 'ROOM_CIRCLE',
-  '4': 'ROOM_POLY',
-  '5': 'TABLE_RECT',
-  '6': 'TABLE_ROUND',
-  '7': 'GATE',
-  '8': 'PARTITION',
+  '2': 'MARQUEE',
+  '3': 'ROOM_RECT',
+  '4': 'ROOM_CIRCLE',
+  '5': 'ROOM_POLY',
+  '6': 'TABLE_RECT',
+  '7': 'TABLE_ROUND',
+  '8': 'GATE',
+  '9': 'PARTITION',
 };
 
 /** The key shown on a tool's button, for the tooltip. */

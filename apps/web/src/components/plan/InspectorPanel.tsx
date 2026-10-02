@@ -258,8 +258,8 @@ function GroupSelection({ canEdit }: { canEdit: boolean }) {
       <Separator />
 
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Shift-click to add or remove one. Drag on empty floor to sweep up every table
-        inside the box.
+        Shift-click to add or remove one. The sweep tool in the rail drags a box over
+        several at once.
       </p>
     </Shell>
   );

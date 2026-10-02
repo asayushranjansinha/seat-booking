@@ -47,6 +47,16 @@ export const selectionKey = (item: SelectionItem) => `${item.type}:${item.id}`;
 
 export type Tool =
   | 'SELECT'
+  /**
+   * Sweeping a box over tables to hold several at once.
+   *
+   * <p>Its own tool rather than something the pointer does on empty floor. A room's floor
+   * covers everything inside it, so a sweep that lives on the pointer has to steal a drag
+   * that would otherwise move the room — and there is nowhere left to grab the room from
+   * except a thin band along its walls, which is a rule nobody can see and everybody
+   * trips over.
+   */
+  | 'MARQUEE'
   | 'ROOM_RECT'
   | 'ROOM_CIRCLE'
   | 'ROOM_POLY'
