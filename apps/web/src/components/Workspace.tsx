@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { resolveShortcut } from '@/editor/shortcuts';
 import { api, ApiError } from '@/api/client';
 import type { AffectedBookingJson, BuildingJson, SessionJson } from '@/api/types';
 import { EditorCanvas } from '@/canvas/EditorCanvas';
@@ -23,14 +24,6 @@ function describe(e: unknown): string | undefined {
   }
   return undefined;
 }
-
-/** Arrow key to a direction on the floor. Y grows upward, the way the canvas draws it. */
-const NUDGES: Record<string, [number, number] | undefined> = {
-  ArrowLeft: [-1, 0],
-  ArrowRight: [1, 0],
-  ArrowUp: [0, 1],
-  ArrowDown: [0, -1],
-};
 
 /** Where the selected thing currently sits, in its own parent's frame. */
 function positionOf(
@@ -226,51 +219,67 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
+
+      const action = resolveShortcut(e, !!canEdit);
+      if (!action) return;
+
+      const store = useEditorStore.getState();
       const temporal = useEditorStore.temporal.getState();
-      if (e.key === 'Escape') {
-        cancelDrawing();
-        setTool('SELECT');
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) temporal.redo();
-        else temporal.undo();
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && canEdit) {
-        e.preventDefault();
-        deleteSelected();
-      } else if (e.key.toLowerCase() === 'v') {
-        setTool('SELECT');
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
-        const clip = useEditorStore.getState().copySelection();
-        if (clip) {
+
+      switch (action.kind) {
+        case 'cancel':
+          cancelDrawing();
+          setTool('SELECT');
+          return;
+        case 'undo':
+          e.preventDefault();
+          temporal.undo();
+          return;
+        case 'redo':
+          e.preventDefault();
+          temporal.redo();
+          return;
+        case 'delete':
+          e.preventDefault();
+          deleteSelected();
+          return;
+        case 'selectTool':
+          setTool('SELECT');
+          return;
+        case 'copy': {
+          const clip = store.copySelection();
+          // No preventDefault when there is nothing to copy: the person is probably
+          // trying to copy text somewhere on the page, and stealing that would be rude.
+          if (!clip) return;
           e.preventDefault();
           toast.success(clip.kind === 'room' ? 'Room copied' : 'Table copied', {
-            description: 'Point where you want it and press ⌘V.',
+            description: 'Point where you want it and press \u2318V.',
           });
+          return;
         }
-        // No preventDefault when there is nothing to copy: the person is probably trying
-        // to copy text somewhere on the page, and stealing that would be rude.
-      } else if (canEdit && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') {
-        e.preventDefault();
-        if (!useEditorStore.getState().pasteClipboard()) {
-          toast.info('Nothing to paste', {
-            description: 'Select a table or a room and press ⌘C first.',
-          });
+        case 'paste':
+          e.preventDefault();
+          if (!store.pasteClipboard()) {
+            toast.info('Nothing to paste', {
+              description: 'Select a table or a room and press \u2318C first.',
+            });
+          }
+          return;
+        case 'nudge': {
+          // A drag cannot reliably move something by one grid square, and on a trackpad
+          // it often cannot move it by a small amount at all. Arrows can.
+          e.preventDefault();
+          const sel = store.selection;
+          if (!sel) return;
+          const here = positionOf(store.scene, sel);
+          if (!here) return;
+          const step = action.big ? store.gridSnap * 4 : store.gridSnap;
+          // One history entry for the whole press, the same as one drag.
+          store.beginDrag();
+          store.moveEntity(sel, here.x + action.dx * step, here.y + action.dy * step, false);
+          store.endDrag();
+          return;
         }
-      } else if (canEdit && NUDGES[e.key]) {
-        // A drag cannot reliably move something by one grid square, and on a trackpad it
-        // often cannot move it by a small amount at all. Arrows can.
-        e.preventDefault();
-        const store = useEditorStore.getState();
-        const sel = store.selection;
-        if (!sel) return;
-        const here = positionOf(store.scene, sel);
-        if (!here) return;
-        const [dx, dy] = NUDGES[e.key]!;
-        const step = e.shiftKey ? store.gridSnap * 4 : store.gridSnap;
-        // One history entry for the whole press-and-hold, the same as one drag.
-        store.beginDrag();
-        store.moveEntity(sel, here.x + dx * step, here.y + dy * step, false);
-        store.endDrag();
       }
     };
     window.addEventListener('keydown', onKey);
