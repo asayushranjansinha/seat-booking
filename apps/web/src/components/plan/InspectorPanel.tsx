@@ -173,6 +173,7 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
   const scene = useEditorStore((s) => s.scene)!;
   const selection = useEditorStore((s) => s.selection)!;
   const renameRoom = useEditorStore((s) => s.renameRoom);
+  const setRoomRate = useEditorStore((s) => s.setRoomRate);
   const resizeShape = useEditorStore((s) => s.resizeShape);
   const rotateEntity = useEditorStore((s) => s.rotateEntity);
   const deleteSelected = useEditorStore((s) => s.deleteSelected);
@@ -198,6 +199,24 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
         disabled={!canEdit}
         onChange={(rot) => rotateEntity(selection, rot)}
       />
+
+      <Field label="Rate per hour">
+        <Input
+          type="number"
+          step="0.50"
+          min="0"
+          placeholder="Free"
+          disabled={!canEdit}
+          value={room.hourlyRate ?? ''}
+          onChange={(e) =>
+            setRoomRate(room.id, e.target.value === '' ? null : Math.max(0, num(e.target.value, 0)))
+          }
+        />
+        <p className="text-[11px] text-muted-foreground">
+          Every seat in this room is billed at this rate, per started hour. Leave it empty
+          and the room is free.
+        </p>
+      </Field>
 
       <Separator />
       <div className="space-y-2">

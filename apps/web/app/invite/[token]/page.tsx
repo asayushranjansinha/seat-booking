@@ -1,13 +1,17 @@
 'use client';
 
+import { Calendar, CalendarCheck2, CalendarX2, Clock, MapPin, User } from 'lucide-react';
 import { use, useCallback, useEffect, useState } from 'react';
-import { api } from '@/api/client';
 import type { InviteViewJson } from '@/api/types';
+import { api } from '@/api/client';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 
-const STATUS_COPY: Record<InviteViewJson['status'], { label: string; colour: string }> = {
-  PENDING: { label: 'Not answered yet', colour: 'var(--muted)' },
-  ACCEPTED: { label: 'You accepted', colour: 'var(--ok)' },
-  DECLINED: { label: 'You declined', colour: 'var(--danger)' },
+const STATUS: Record<InviteViewJson['status'], { label: string; variant: 'secondary' | 'default' | 'destructive' }> = {
+  PENDING: { label: 'Not answered yet', variant: 'secondary' },
+  ACCEPTED: { label: 'You accepted', variant: 'default' },
+  DECLINED: { label: 'You declined', variant: 'destructive' },
 };
 
 /**
@@ -49,8 +53,8 @@ export default function InvitePage({
       .viewInvite(token)
       .then((loaded) => {
         setInvite(loaded);
-        // The email's buttons carry the answer, so arriving from one replies straight
-        // away rather than making the person click the same thing twice.
+        // The buttons in the email carry the answer, so arriving from one replies
+        // straight away rather than making the person click the same thing twice.
         if ((reply === 'accept' || reply === 'decline') && loaded.status === 'PENDING') {
           void respond(reply);
         }
@@ -59,41 +63,67 @@ export default function InvitePage({
   }, [token, reply, respond]);
 
   if (error) {
-    return <Shell><p style={{ color: 'var(--danger)' }}>{error}</p></Shell>;
+    return (
+      <Shell>
+        <p className="text-sm text-destructive">{error}</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Ask the organiser to send the invitation again.
+        </p>
+      </Shell>
+    );
   }
   if (!invite) {
-    return <Shell><p style={{ color: 'var(--muted)' }}>Loading...</p></Shell>;
+    return <Shell><p className="text-sm text-muted-foreground">Loading...</p></Shell>;
   }
 
   const starts = new Date(invite.startsAt);
   const ends = new Date(invite.endsAt);
+  const status = STATUS[invite.status];
 
   return (
     <Shell>
-      <p style={{ margin: '0 0 4px', fontSize: 12, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--muted)' }}>
-        Meeting invitation
-      </p>
-      <h1 style={{ margin: '0 0 16px', fontSize: 21 }}>{invite.meetingTitle}</h1>
-      {invite.agenda && <p style={{ margin: '0 0 18px' }}>{invite.agenda}</p>}
-
-      <Row label="When" value={`${starts.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })} – ${ends.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`} />
-      <Row label="Where" value={`${invite.roomName} · ${invite.tableLabel}`} />
-      <Row label="Organiser" value={invite.organizerEmail} />
-      <Row label="You" value={invite.yourEmail} />
-
-      <p style={{ margin: '18px 0 10px', color: STATUS_COPY[invite.status].colour, fontWeight: 600 }}>
-        {STATUS_COPY[invite.status].label}
-      </p>
-
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button data-variant="primary" disabled={busy || invite.status === 'ACCEPTED'} onClick={() => respond('accept')}>
-          Accept
-        </button>
-        <button disabled={busy || invite.status === 'DECLINED'} onClick={() => respond('decline')}>
-          Decline
-        </button>
+      <div className="space-y-1">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Meeting invitation
+        </p>
+        <h1 className="text-xl font-semibold">{invite.meetingTitle}</h1>
+        {invite.agenda && <p className="text-sm text-muted-foreground">{invite.agenda}</p>}
       </div>
-      <p style={{ marginTop: 18, fontSize: 12, color: 'var(--muted)' }}>
+
+      <Separator className="my-5" />
+
+      <dl className="space-y-3 text-sm">
+        <Row icon={<Clock className="size-4" />} label="When">
+          {starts.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+          {', '}
+          {starts.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })} –{' '}
+          {ends.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+        </Row>
+        <Row icon={<MapPin className="size-4" />} label="Where">
+          {invite.roomName} · {invite.tableLabel}
+        </Row>
+        <Row icon={<User className="size-4" />} label="Organiser">{invite.organizerEmail}</Row>
+        <Row icon={<Calendar className="size-4" />} label="You">{invite.yourEmail}</Row>
+      </dl>
+
+      <Separator className="my-5" />
+
+      <div className="flex items-center justify-between gap-3">
+        <Badge variant={status.variant}>{status.label}</Badge>
+        <div className="flex gap-2">
+          <Button size="sm" disabled={busy || invite.status === 'ACCEPTED'} onClick={() => respond('accept')}>
+            <CalendarCheck2 className="size-4" />
+            Accept
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy || invite.status === 'DECLINED'}
+            onClick={() => respond('decline')}>
+            <CalendarX2 className="size-4" />
+            Decline
+          </Button>
+        </div>
+      </div>
+
+      <p className="mt-4 text-xs text-muted-foreground">
         You can change your answer at any time from this link.
       </p>
     </Shell>
@@ -102,19 +132,20 @@ export default function InvitePage({
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <main style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 24 }}>
-      <div style={{ width: 460, maxWidth: '100%', background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 12, padding: 28 }}>
-        {children}
-      </div>
+    <main className="grid min-h-screen place-items-center p-6">
+      <div className="w-full max-w-md rounded-xl border bg-card p-6 shadow-lg">{children}</div>
     </main>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', gap: 16, padding: '5px 0', fontSize: 14 }}>
-      <span style={{ color: 'var(--muted)', width: 84 }}>{label}</span>
-      <strong style={{ flex: 1 }}>{value}</strong>
+    <div className="flex gap-3">
+      <span className="mt-0.5 text-muted-foreground">{icon}</span>
+      <div className="min-w-0">
+        <dt className="text-xs text-muted-foreground">{label}</dt>
+        <dd className="font-medium">{children}</dd>
+      </div>
     </div>
   );
 }

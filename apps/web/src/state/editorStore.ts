@@ -95,6 +95,7 @@ interface EditorState extends UndoableState {
   rotateEntity: (selection: NonNullable<Selection>, rot: number) => void;
   resizeShape: (selection: NonNullable<Selection>, shape: ShapeJson) => void;
   renameRoom: (roomId: string, name: string) => void;
+  setRoomRate: (roomId: string, rate: number | null) => void;
 
   setTableRule: (tableId: string, placement: PlacementJson) => void;
   regenerateSeats: (tableId: string) => void;
@@ -372,6 +373,21 @@ export const useEditorStore = create<EditorState>()(
       renameRoom: (roomId, name) =>
         set((state) =>
           state.scene ? { ...state, scene: updateRoom(state.scene, roomId, (r) => ({ ...r, name })), dirty: true } : state,
+        ),
+
+      /**
+       * The rate a seat is billed at, set on the room.
+       *
+       * <p>Seats fall back to their room's rate, so one number prices a whole room and a
+       * seat only needs its own when it differs. A room drawn with no rate prices at zero,
+       * which is why this field exists at all: the pricing worked, but nothing could set
+       * the input it worked from.
+       */
+      setRoomRate: (roomId, hourlyRate) =>
+        set((state) =>
+          state.scene
+            ? { ...state, scene: updateRoom(state.scene, roomId, (r) => ({ ...r, hourlyRate })), dirty: true }
+            : state,
         ),
 
       setTableRule: (tableId, placement) =>
