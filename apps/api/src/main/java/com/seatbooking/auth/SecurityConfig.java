@@ -36,7 +36,10 @@ import java.util.List;
  * <p>Stateless, so no session fixation surface and no server-side session store to scale.
  */
 @Configuration
-@EnableConfigurationProperties({AuthProperties.class, com.seatbooking.booking.BookingProperties.class})
+@EnableConfigurationProperties({
+        AuthProperties.class,
+        com.seatbooking.booking.BookingProperties.class,
+        com.seatbooking.meeting.MailProperties.class})
 @EnableMethodSecurity
 public class SecurityConfig {
 
@@ -113,6 +116,10 @@ public class SecurityConfig {
                         // means issuing a short-lived single-use stream ticket.
                         .requestMatchers(HttpMethod.GET, "/api/floors/*/occupancy/stream").permitAll()
                         .requestMatchers("/api/floors/*/occupancy").authenticated()
+                        // An invitee may have no account; the token IS the credential and
+                        // grants nothing beyond seeing and answering that one invitation.
+                        .requestMatchers("/api/invites/**").permitAll()
+                        .requestMatchers("/api/meetings/**").authenticated()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtAuthenticationConverter(converter)))
                 .build();

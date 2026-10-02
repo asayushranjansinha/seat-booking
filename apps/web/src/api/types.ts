@@ -167,3 +167,39 @@ export interface BookingJson {
   status: 'CONFIRMED' | 'CANCELLED';
   cost: number;
 }
+
+// ---------------------------------------------------------------- meetings (M3)
+
+export interface InviteJson {
+  id: string;
+  email: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+}
+
+export interface MeetingJson {
+  id: string;
+  tableId: string;
+  tableLabel: string | null;
+  roomName: string | null;
+  title: string;
+  agenda: string | null;
+  startsAt: string;
+  endsAt: string;
+  organizerEmail: string;
+  seatCount: number;
+  seatCodes: string[];
+  totalCost: number;
+  invites: InviteJson[];
+}
+
+export interface InviteViewJson {
+  meetingTitle: string;
+  agenda: string | null;
+  startsAt: string;
+  endsAt: string;
+  roomName: string;
+  tableLabel: string;
+  organizerEmail: string;
+  yourEmail: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+}

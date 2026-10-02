@@ -119,15 +119,20 @@ class BookingConcurrencyTest {
         AtomicInteger created = new AtomicInteger();
         AtomicInteger conflict = new AtomicInteger();
         AtomicInteger other = new AtomicInteger();
+        java.util.List<String> unexpected = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
 
         try (ExecutorService pool = Executors.newFixedThreadPool(ATTEMPTS)) {
             List<Callable<Integer>> calls = java.util.stream.IntStream.range(0, ATTEMPTS)
                     .<Callable<Integer>>mapToObj(i -> () -> {
                         gate.await(10, TimeUnit.SECONDS);
-                        int status = postBooking(seatId, start, end).statusCode();
+                        java.net.http.HttpResponse<String> response = postBooking(seatId, start, end);
+                        int status = response.statusCode();
                         if (status == 201) created.incrementAndGet();
                         else if (status == 409) conflict.incrementAndGet();
-                        else other.incrementAndGet();
+                        else {
+                            other.incrementAndGet();
+                            unexpected.add(status + " " + response.body());
+                        }
                         return status;
                     })
                     .toList();
@@ -136,9 +141,9 @@ class BookingConcurrencyTest {
             }
         }
 
+        assertEquals(0, other.get(), "no attempt may fail in any other way: " + unexpected);
         assertEquals(1, created.get(), "exactly one booking may be created");
         assertEquals(ATTEMPTS - 1, conflict.get(), "every other attempt must be refused with 409");
-        assertEquals(0, other.get(), "no attempt may fail in any other way");
 
         int rows = jdbc.sql("""
                 SELECT count(*) FROM booking WHERE seat_id = :id AND status <> 'CANCELLED'

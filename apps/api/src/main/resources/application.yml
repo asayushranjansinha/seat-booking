@@ -23,6 +23,19 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
+  mail:
+    host: ${SEATBOOKING_SMTP_HOST:localhost}
+    port: ${SEATBOOKING_SMTP_PORT:1025}
+    properties:
+      mail.smtp.auth: false
+      mail.smtp.starttls.enable: false
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+
+  thymeleaf:
+    check-template-location: true
+
   # Blocking JPA on virtual threads. Deliberately not WebFlux: SseEmitter works well and
   # the reactive programming tax buys nothing at this scale.
   threads:
@@ -44,10 +57,15 @@ seatbooking:
   booking:
     max-advance: P6D
     max-duration: PT6H
+  mail:
+    from: no-reply@seatbooking.test
+    # Where an invitee's accept/decline link points. Mailpit shows the mail at :8025.
+    public-base-url: ${SEATBOOKING_PUBLIC_URL:http://localhost:3000}
+    # The worker claims a small batch each tick; SMTP is slow and this is not a race.
+    batch-size: 25
 
-# Mail (M3) and Redis (multi-instance SSE) are deliberately absent: their starters are
-# not on the classpath yet, and configuration for a dependency that is not there reads
-# like working wiring. Each block comes back with the dependency that needs it.
+# Redis (multi-instance SSE) is deliberately absent: its starter is not on the classpath
+# yet, and configuration for a dependency that is not there reads like working wiring.
 
 logging:
   level:

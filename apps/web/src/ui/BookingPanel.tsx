@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/api/client';
 import type { BookingJson, SeatStatus } from '@/api/types';
 import { useEditorStore } from '@/state/editorStore';
+import { MeetingSection } from './MeetingSection';
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -24,7 +25,7 @@ const when = (ms: number) =>
     weekday: 'short', hour: '2-digit', minute: '2-digit',
   });
 
-export function BookingPanel({ floorId }: { floorId: string | null }) {
+export function BookingPanel({ floorId, canManage }: { floorId: string | null; canManage: boolean }) {
   const scene = useEditorStore((s) => s.scene);
   const selection = useEditorStore((s) => s.selection);
   const occupancy = useEditorStore((s) => s.occupancy);
@@ -178,6 +179,8 @@ export function BookingPanel({ floorId }: { floorId: string | null }) {
         )}
         {message && <p style={{ fontSize: 12, marginTop: 8, color: 'var(--accent)' }}>{message}</p>}
       </section>
+
+      <MeetingSection canManage={canManage} />
 
       <section>
         <h2 style={heading}>My bookings</h2>

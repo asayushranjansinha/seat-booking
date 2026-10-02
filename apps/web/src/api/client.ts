@@ -1,5 +1,7 @@
 import type {
   BookingJson,
+  InviteViewJson,
+  MeetingJson,
   BuildingJson,
   OccupancyJson,
   PublishResultJson,
@@ -180,6 +182,47 @@ export const api = {
       if (source.readyState === EventSource.CLOSED) onChange();
     };
     return () => source.close();
+  },
+
+  async createMeeting(input: {
+    tableId: string;
+    title: string;
+    agenda: string;
+    startsAt: Date;
+    endsAt: Date;
+    inviteEmails: string[];
+  }): Promise<MeetingJson> {
+    const { data } = await request<MeetingJson>('/api/meetings', {
+      method: 'POST',
+      body: {
+        tableId: input.tableId,
+        title: input.title,
+        agenda: input.agenda,
+        startsAt: input.startsAt.toISOString(),
+        endsAt: input.endsAt.toISOString(),
+        inviteEmails: input.inviteEmails,
+      },
+    });
+    return data;
+  },
+
+  async myMeetings(): Promise<MeetingJson[]> {
+    const { data } = await request<MeetingJson[]>('/api/meetings/mine');
+    return data;
+  },
+
+  /** Unauthenticated: an invitee may have no account, and the token is the credential. */
+  async viewInvite(token: string): Promise<InviteViewJson> {
+    const { data } = await request<InviteViewJson>(`/api/invites/${token}`);
+    return data;
+  },
+
+  async respondToInvite(token: string, reply: 'accept' | 'decline'): Promise<InviteViewJson> {
+    const { data } = await request<InviteViewJson>(
+      `/api/invites/${token}/respond?reply=${reply}`,
+      { method: 'POST' },
+    );
+    return data;
   },
 
   async publish(planVersionId: string): Promise<PublishResultJson> {

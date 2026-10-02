@@ -20,6 +20,8 @@
   <properties>
     <java.version>21</java.version>
     <jts.version>1.20.0</jts.version>
+    <!-- The build plan named 4.3.0; 4.4.0 is the current release. -->
+    <ical4j.version>4.4.0</ical4j.version>
   </properties>
 
   <dependencies>
@@ -74,6 +76,21 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+
+    <!-- Email. Nothing here is on a request path: the outbox worker owns all of it. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-mail</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-thymeleaf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.mnode.ical4j</groupId>
+      <artifactId>ical4j</artifactId>
+      <version>${ical4j.version}</version>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

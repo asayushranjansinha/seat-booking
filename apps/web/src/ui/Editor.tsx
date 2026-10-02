@@ -262,7 +262,14 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
             overflowY: 'auto',
           }}
         >
-          {mode === 'PLAN' ? <PropertiesPanel /> : <BookingPanel floorId={floorId} />}
+          {mode === 'PLAN' ? (
+            <PropertiesPanel />
+          ) : (
+            <BookingPanel
+              floorId={floorId}
+              canManage={session.user.role === 'MANAGER' || session.user.role === 'ADMIN'}
+            />
+          )}
         </aside>
       </div>
 

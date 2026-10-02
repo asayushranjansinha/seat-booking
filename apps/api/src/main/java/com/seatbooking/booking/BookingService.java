@@ -6,14 +6,13 @@ import com.seatbooking.domain.BookingStatus;
 import com.seatbooking.repo.AppUserRepository;
 import com.seatbooking.repo.BookingRepository;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.dao.DataIntegrityViolationException;
+import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -30,19 +29,25 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class BookingService {
 
-    /** Postgres SQLSTATE for an exclusion constraint violation. */
-    private static final String EXCLUSION_VIOLATION = "23P01";
+    /**
+     * How many times to re-attempt an insert that Postgres aborted to break a
+     * deadlock. Contention like that is transient by definition, and three attempts
+     * clears it comfortably at any load this product will see.
+     */
+    private static final int MAX_ATTEMPTS = 4;
 
     private final BookingRepository bookings;
+    private final BookingWriter writer;
     private final AppUserRepository users;
     private final OccupancyPublisher occupancy;
     private final BookingProperties properties;
     private final JdbcClient jdbc;
 
-    public BookingService(BookingRepository bookings, AppUserRepository users,
+    public BookingService(BookingRepository bookings, BookingWriter writer, AppUserRepository users,
                           OccupancyPublisher occupancy, BookingProperties properties,
                           JdbcClient jdbc) {
         this.bookings = bookings;
+        this.writer = writer;
         this.users = users;
         this.occupancy = occupancy;
         this.properties = properties;
@@ -70,23 +75,11 @@ public class BookingService {
                 .optional();
     }
 
-    /**
-     * Cost for the slot, from the rates modelled on the seat or its room.
-     *
-     * <p>Billed per started hour rather than per second: a 90 minute booking is charged
-     * as two, which is how desk space is actually sold and avoids presenting someone with
-     * a bill of 4.4999 pounds.
-     */
-    static BigDecimal priceFor(BigDecimal hourlyRate, Instant startsAt, Instant endsAt) {
-        if (hourlyRate == null || hourlyRate.signum() == 0) {
-            return BigDecimal.ZERO;
-        }
-        long minutes = Duration.between(startsAt, endsAt).toMinutes();
-        long startedHours = (minutes + 59) / 60;
-        return hourlyRate.multiply(BigDecimal.valueOf(startedHours)).setScale(2, RoundingMode.HALF_UP);
-    }
 
-    @Transactional
+    /**
+     * Deliberately NOT transactional: the insert is retried, and a retry needs a fresh
+     * transaction rather than more statements in one Postgres has already aborted.
+     */
     public BookingDtos.BookingResponse book(CurrentUser caller, BookingDtos.CreateBookingRequest request) {
         Instant now = Instant.now();
         Instant startsAt = request.startsAt();
@@ -125,32 +118,44 @@ public class BookingService {
         }
 
         Booking booking = new Booking(seat.organizationId(), seat.seatId(), caller.id(),
-                startsAt, endsAt, priceFor(seat.rate(), startsAt, endsAt));
-        try {
-            bookings.saveAndFlush(booking);
-        } catch (DataIntegrityViolationException e) {
-            if (isExclusionViolation(e)) {
-                // The other request won. Nothing was written, so there is nothing to undo.
+                startsAt, endsAt, Pricing.forSlot(seat.rate(), startsAt, endsAt));
+
+        for (int attempt = 1; ; attempt++) {
+            try {
+                writer.insert(booking);
+                break;
+            } catch (BookingWriter.SeatTakenException e) {
+                // Definitive: the constraint refused because something overlaps. Another
+                // request won, nothing was written, and retrying cannot change that.
                 throw new BookingException(HttpStatus.CONFLICT, "ALREADY_BOOKED",
                         "Seat " + seat.code() + " is already booked for part of that time.");
+            } catch (BookingWriter.ContendedException e) {
+                // Not definitive: Postgres chose this transaction as the deadlock victim
+                // while several were queued on the same constraint check. Whether the seat
+                // is free is still unknown, so try again rather than report a conflict
+                // that may not exist.
+                if (attempt >= MAX_ATTEMPTS) {
+                    throw new BookingException(HttpStatus.CONFLICT, "CONTENDED",
+                            "Seat " + seat.code() + " is being booked by several people at once. "
+                                    + "Please try again.");
+                }
+                backOff(attempt);
             }
-            throw e;
         }
 
         occupancy.seatChanged(seat.floorId(), seat.seatId());
         return describe(booking, seat.code(), caller.email());
     }
 
-    private static boolean isExclusionViolation(Throwable e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof java.sql.SQLException sql && EXCLUSION_VIOLATION.equals(sql.getSQLState())) {
-                return true;
-            }
-            if (t.getMessage() != null && t.getMessage().contains("booking_no_overlap")) {
-                return true;
-            }
+    /** Jittered, so retrying transactions do not line up and deadlock again together. */
+    private static void backOff(int attempt) {
+        try {
+            Thread.sleep(ThreadLocalRandom.current().nextLong(5L * attempt, 25L * attempt));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BookingException(HttpStatus.SERVICE_UNAVAILABLE, "INTERRUPTED",
+                    "The request was interrupted.");
         }
-        return false;
     }
 
     @Transactional

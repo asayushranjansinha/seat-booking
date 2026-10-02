@@ -63,6 +63,12 @@ the validation overlay; the 2D/3D toggle; and the draft/publish flow.
 coloured for the window being viewed, booking and cancellation, cost from the modelled
 rates, and live updates over SSE when someone else takes a seat.
 
+**Meetings** let a manager hold a whole table and invite people by email. The meeting,
+every seat's booking, the invites and the queued emails are one transaction: if a single
+seat is taken the lot rolls back, because a half-held table is not what was asked for.
+Mail goes through a transactional outbox, so SMTP never delays a booking and an outage
+never loses an invite. Invitees answer from a link with no account.
+
 Seat colour is never stored. A seat is only free or taken *relative to a window*, which
 is why booking has a scrubber rather than a single live view.
 
