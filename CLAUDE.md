@@ -44,6 +44,11 @@ Rules:
 - **Angles** are radians everywhere in the model. Degrees only at the UI edge.
 - **Units** are metres.
 - TypeScript: `strict`, no `any`, no default exports except Next.js pages/layouts.
+- UI is Tailwind v4 + shadcn/ui. Design tokens live in `app/globals.css`; the canvas
+  palette in `canvas/sceneGraph.ts` mirrors them as hex, because a WebGL material cannot
+  read a CSS custom property. Change both together.
+- Feedback goes through `sonner` toasts, not inline status text: an action's result should
+  not depend on the person still looking at the panel they started from.
 - Java: constructor injection only, no field `@Autowired`. Records for DTOs.
 - SQL migrations are explicit Flyway SQL — we use extensions, generated columns and
   exclusion constraints Hibernate DDL cannot express. Never `ddl-auto` beyond `validate`.

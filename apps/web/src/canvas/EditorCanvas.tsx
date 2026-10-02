@@ -43,7 +43,7 @@ export function EditorCanvas() {
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setClearColor(0x0f1115, 1);
+    renderer.setClearColor(0x161b24, 1);  // matches --canvas
     el.appendChild(renderer.domElement);
     renderer.domElement.style.display = 'block';
     renderer.domElement.style.touchAction = 'none';
@@ -54,7 +54,7 @@ export function EditorCanvas() {
     sun.position.set(8, -10, 14);
     scene.add(sun);
 
-    const grid = new THREE.GridHelper(200, 800, 0x262c36, 0x1b2029);
+    const grid = new THREE.GridHelper(200, 800, 0x2b3240, 0x1f2531);
     grid.rotation.x = Math.PI / 2;
     grid.position.z = -0.05;
     scene.add(grid);

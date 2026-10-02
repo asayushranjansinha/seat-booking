@@ -4,32 +4,36 @@ import type { Selection } from '@/state/editorStore';
 import { extrudedGeometry, footprintGeometry, outlinePoints, ringFor, wallGeometry } from './shapeToThree';
 import type { Drawing } from '@/state/editorStore';
 
+/**
+ * Canvas palette, kept in step with the CSS tokens in app/globals.css.
+ *
+ * <p>Duplicated as hex because WebGL materials cannot read CSS custom properties. The
+ * booked and free states differ in BRIGHTNESS as well as hue, since red and green are
+ * the commonest colour-blindness confusion and a seat plan is read at a glance.
+ */
 export const COLORS = {
-  roomFill: 0x1b2029,
-  roomFillSelected: 0x232d3d,
-  roomEdge: 0x3a4454,
-  roomEdgeSelected: 0x4c9aff,
-  table: 0x36506e,
-  tableSelected: 0x4c9aff,
-  seat: 0x3ddc97,
-  seatOverride: 0xffc857,
-  invalid: 0xff6b6b,
-  gate: 0xffc857,
-  emergency: 0xff6b6b,
-  partition: 0x8d97a8,
-  tableEdge: 0x4a6c92,
-  tableEdgeSelected: 0x8dc2ff,
-  subZone: 0x2a3443,
-  subZoneEdge: 0x45536a,
-  guide: 0xffc857,
-  pen: 0x4c9aff,
-  // Booking colours. Green and red are the obvious pair, but they are also the commonest
-  // colour-blindness confusion, so the two states differ in BRIGHTNESS as well as hue and
-  // the seat code is always available in the panel.
-  seatFree: 0x3ddc97,
-  seatBooked: 0x8d3b4a,
-  seatMine: 0x4c9aff,
-  seatBlocked: 0x3a4454,
+  roomFill: 0x222834,
+  roomFillSelected: 0x2b3444,
+  roomEdge: 0x414a5c,
+  roomEdgeSelected: 0x5b9bff,
+  table: 0x3a4a63,
+  tableSelected: 0x5b9bff,
+  tableEdge: 0x50617e,
+  tableEdgeSelected: 0x9cc4ff,
+  seat: 0x5fd6a4,
+  seatOverride: 0xf0c24a,
+  invalid: 0xe0646f,
+  gate: 0xf0c24a,
+  emergency: 0xe0646f,
+  partition: 0x8792a6,
+  subZone: 0x2a3140,
+  subZoneEdge: 0x47526b,
+  guide: 0xf0c24a,
+  pen: 0x5b9bff,
+  seatFree: 0x5fd6a4,
+  seatBooked: 0xa14954,
+  seatMine: 0x5b9bff,
+  seatBlocked: 0x4a5265,
 } as const;
 
 /** What a picked object refers to, stashed on the three.js object. */

@@ -1,0 +1,222 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
+import { api, ApiError } from '@/api/client';
+import type { AffectedBookingJson, BuildingJson, SessionJson } from '@/api/types';
+import { EditorCanvas } from '@/canvas/EditorCanvas';
+import { AppHeader } from '@/components/AppHeader';
+import { BookPanel } from '@/components/book/BookPanel';
+import { InspectorPanel } from '@/components/plan/InspectorPanel';
+import { IssuesBar } from '@/components/plan/IssuesBar';
+import { PlanToolRail } from '@/components/plan/PlanToolRail';
+import { PlanTopBar } from '@/components/plan/PlanTopBar';
+import { StatusReadout } from '@/components/plan/StatusReadout';
+import { useEditorStore } from '@/state/editorStore';
+
+export function Workspace({ session, onSignOut }: { session: SessionJson; onSignOut: () => void }) {
+  const scene = useEditorStore((s) => s.scene);
+  const etag = useEditorStore((s) => s.etag);
+  const dirty = useEditorStore((s) => s.dirty);
+  const mode = useEditorStore((s) => s.mode);
+  const setMode = useEditorStore((s) => s.setMode);
+  const drawing = useEditorStore((s) => s.drawing);
+  const loadScene = useEditorStore((s) => s.loadScene);
+  const markSaved = useEditorStore((s) => s.markSaved);
+  const setViolations = useEditorStore((s) => s.setViolations);
+  const deleteSelected = useEditorStore((s) => s.deleteSelected);
+  const setTool = useEditorStore((s) => s.setTool);
+  const cancelDrawing = useEditorStore((s) => s.cancelDrawing);
+
+  const [buildings, setBuildings] = useState<BuildingJson[]>([]);
+  const [floorId, setFloorId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [affected, setAffected] = useState<AffectedBookingJson[]>([]);
+
+  const isAdmin = session.user.role === 'ADMIN';
+  const canEdit = mode === 'PLAN' && scene?.status === 'DRAFT' && isAdmin;
+
+  useEffect(() => {
+    if (!isAdmin) setMode('BOOK');
+  }, [isAdmin, setMode]);
+
+  useEffect(() => {
+    void api.buildings().then((list) => {
+      setBuildings(list);
+      const first = list[0]?.floors[0];
+      if (first) setFloorId(first.id);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!floorId) return;
+    const building = buildings.find((b) => b.floors.some((f) => f.id === floorId));
+    const floor = building?.floors.find((f) => f.id === floorId);
+    // Booking always reads the PUBLISHED layout: a draft's seats may not exist yet, and
+    // offering them would sell a chair nobody can sit in.
+    const load = mode === 'PLAN' && floor?.draftVersionId
+      ? api.scene(floor.draftVersionId)
+      : api.publishedScene(floorId);
+    load
+      .then(({ scene: s, etag: e }) => loadScene(s, e))
+      .catch(() => toast.info('This floor has no published layout yet.'));
+  }, [floorId, buildings, loadScene, mode]);
+
+  const refreshBuildings = useCallback(async () => setBuildings(await api.buildings()), []);
+
+  const save = useCallback(async () => {
+    if (!scene) return;
+    setBusy('saving');
+    try {
+      const { scene: saved, etag: next } = await api.saveScene(scene.planVersionId, scene, etag);
+      markSaved(saved, next);
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError && e.status === 412
+          ? 'Someone else changed this layout'
+          : 'Could not save',
+        {
+          description: e instanceof ApiError && e.status === 412
+            ? 'Reload before saving so their work is not lost.'
+            : undefined,
+        },
+      );
+    } finally {
+      setBusy(null);
+    }
+  }, [scene, etag, markSaved]);
+
+  // Autosave a few seconds after editing stops, and never mid-stroke: the scene save
+  // replaces the whole graph, so firing it per change would send dozens of full layouts.
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!canEdit || !dirty || busy !== null || drawing) return;
+    const timer = setTimeout(() => void saveRef.current(), 2500);
+    return () => clearTimeout(timer);
+  }, [canEdit, dirty, busy, drawing, scene]);
+
+  const validate = useCallback(async () => {
+    if (!scene) return;
+    setBusy('validating');
+    try {
+      const found = await api.validate(scene.planVersionId);
+      setViolations(found);
+      setAffected([]);
+      if (found.length === 0) toast.success('No problems found');
+    } finally {
+      setBusy(null);
+    }
+  }, [scene, setViolations]);
+
+  const publish = useCallback(async () => {
+    if (!scene) return;
+    setBusy('publishing');
+    try {
+      if (dirty) {
+        const { scene: saved, etag: next } = await api.saveScene(scene.planVersionId, scene, etag);
+        markSaved(saved, next);
+      }
+      const result = await api.publish(scene.planVersionId);
+      setViolations(result.violations);
+      setAffected(result.affectedBookings);
+      if (result.published) {
+        loadScene(result.scene, String(result.scene.revision));
+        toast.success('Layout published', { description: 'Everyone sees this version now.' });
+        await refreshBuildings();
+      } else {
+        toast.error('Publishing was refused', {
+          description: result.affectedBookings.length > 0
+            ? 'It would leave live bookings without a seat.'
+            : 'Fix the problems listed at the bottom.',
+        });
+      }
+    } finally {
+      setBusy(null);
+    }
+  }, [scene, dirty, etag, markSaved, setViolations, loadScene, refreshBuildings]);
+
+  const createDraft = useCallback(async () => {
+    if (!floorId) return;
+    setBusy('drafting');
+    try {
+      const draft = await api.createDraft(floorId);
+      loadScene(draft, String(draft.revision));
+      await refreshBuildings();
+      toast.success('Editable draft created', { description: 'Changes stay private until you publish.' });
+    } catch {
+      toast.error('Only an admin can edit a layout');
+    } finally {
+      setBusy(null);
+    }
+  }, [floorId, loadScene, refreshBuildings]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
+      const temporal = useEditorStore.temporal.getState();
+      if (e.key === 'Escape') {
+        cancelDrawing();
+        setTool('SELECT');
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) temporal.redo();
+        else temporal.undo();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && canEdit) {
+        e.preventDefault();
+        deleteSelected();
+      } else if (e.key.toLowerCase() === 'v') {
+        setTool('SELECT');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [canEdit, deleteSelected, setTool, cancelDrawing]);
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden">
+      <AppHeader
+        session={session}
+        buildings={buildings}
+        floorId={floorId}
+        onFloorChange={setFloorId}
+        onSignOut={onSignOut}
+      />
+
+      <div className="flex min-h-0 flex-1">
+        {mode === 'PLAN' && <PlanToolRail disabled={!canEdit} />}
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {mode === 'PLAN' && (
+            <PlanTopBar
+              onValidate={validate}
+              onPublish={publish}
+              onCreateDraft={createDraft}
+              busy={busy}
+              canEdit={!!canEdit}
+            />
+          )}
+
+          <div className="relative min-h-0 flex-1 bg-canvas">
+            <EditorCanvas />
+            {mode === 'PLAN' && <StatusReadout />}
+          </div>
+
+          {mode === 'PLAN' && <IssuesBar affected={affected} />}
+        </div>
+
+        <aside className="flex w-[320px] shrink-0 flex-col border-l bg-sidebar">
+          {mode === 'PLAN' ? (
+            <InspectorPanel />
+          ) : (
+            <BookPanel
+              floorId={floorId}
+              canManage={session.user.role === 'MANAGER' || session.user.role === 'ADMIN'}
+            />
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
