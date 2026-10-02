@@ -253,24 +253,86 @@ export function EditorCanvas() {
       }
     };
 
+    /** The most specific thing under the pointer, or nothing. */
+    const pickAt = (held: ReadonlyArray<SelectionItem>) => {
+      // Raycasting reads matrixWorld, which three.js refreshes during render. A graph
+      // rebuilt since the last frame still carries identity matrices, so every room tests
+      // as if it sat at the origin: clicks land on whichever room happens to overlap the
+      // origin, and nothing else is hit at all.
+      graph?.updateMatrixWorld(true);
+      const hits = graph ? raycaster.intersectObjects(graph.children, true) : [];
+      // Anything already held wins over anything that is not, before specificity even
+      // comes into it. Duplicates land near their originals and tables are routinely
+      // stacked while a layout is being worked out, so a press on a pile where one member
+      // IS the group must grab the group. Without this the press lands on whichever
+      // overlapping thing happens to be nearest and the group collapses to that one.
+      const isHeld = new Set(held.map((x) => `${x.type}:${x.id}`));
+      const hit = hits
+        .filter((h) => (h.object.userData as { pick?: PickData }).pick)
+        .sort((a, b) => {
+          const sa = (a.object.userData as { pick: PickData }).pick.selection;
+          const sb = (b.object.userData as { pick: PickData }).pick.selection;
+          const ha = isHeld.has(`${sa.type}:${sa.id}`) ? 0 : 1;
+          const hb = isHeld.has(`${sb.type}:${sb.id}`) ? 0 : 1;
+          return ha - hb
+            || SPECIFICITY[sa.type] - SPECIFICITY[sb.type]
+            || a.distance - b.distance;
+        })[0];
+      return hit ? (hit.object.userData as { pick: PickData }).pick : null;
+    };
+
+    const beginMarquee = (event: PointerEvent, world: THREE.Vector2) => {
+      dragRef.current = { mode: 'marquee', from: world.clone(), to: world.clone(), room: null };
+      marqueeRef.current = { from: { x: world.x, y: world.y }, to: { x: world.x, y: world.y } };
+      requestRebuild();
+      renderer.domElement.setPointerCapture(event.pointerId);
+    };
+
+    /**
+     * Which gesture a press begins.
+     *
+     * <p>Read as a list of modes, most exclusive first, because that is the rule: a tool
+     * owns the press outright. Only the pointer selects, grabs grips and drags; every
+     * other tool does its own one job and nothing else. The version this replaced let a
+     * press on bare floor start a rubber band even while the pointer was active, so
+     * clicking away from a room began a drag instead of simply clearing — which is what
+     * made selecting and the grips feel broken.
+     */
     const onPointerDown = (event: PointerEvent) => {
       const state = useEditorStore.getState();
       const s = state.scene;
       if (!s) return;
       const world = toWorld(event);
 
-      // The sweep is a tool, so it takes the press outright. Nothing underneath matters:
-      // dragging a box over a room must not also start moving the room.
-      if (state.mode === 'PLAN' && state.tool === 'MARQUEE' && state.editable && state.view === '2D') {
-        if (!event.shiftKey) state.setSelection([]);
-        dragRef.current = { mode: 'marquee', from: world.clone(), to: world.clone(), room: null };
-        marqueeRef.current = { from: { x: world.x, y: world.y }, to: { x: world.x, y: world.y } };
-        requestRebuild();
-        renderer.domElement.setPointerCapture(event.pointerId);
+      // Booking picks a seat to book. Nothing moves, whatever tool is showing.
+      if (state.mode === 'BOOK') {
+        const pick = pickAt(state.selection);
+        state.setSelection(pick ? [pick.selection] : []);
         return;
       }
 
-      if (state.mode === 'PLAN' && state.tool !== 'SELECT' && state.editable) {
+      // 3D renders the same scene but authors nothing; it selects so the panel can report.
+      if (state.view === '3D') {
+        const pick = pickAt(state.selection);
+        state.setSelection(pick ? [pick.selection] : []);
+        return;
+      }
+
+      // Nothing below this line changes a layout that cannot be changed. Selecting still
+      // works, so a published plan can be read.
+      if (!state.editable) {
+        const pick = pickAt(state.selection);
+        state.setSelection(pick ? [pick.selection] : []);
+        return;
+      }
+
+      if (state.tool === 'MARQUEE') {
+        if (!event.shiftKey) state.setSelection([]);
+        beginMarquee(event, world);
+        return;
+      }
+
+      if (state.tool !== 'SELECT') {
         switch (state.tool) {
           case 'ROOM_RECT':
             state.addRoom({ kind: 'RECT', w: 8, h: 6 }, world);
@@ -286,8 +348,8 @@ export function EditorCanvas() {
             if (pen?.kind !== 'POLYGON') {
               state.startPolygon(p);
             } else if (
-              pen.points.length >= 3 &&
-              Math.hypot(p.x - pen.points[0]!.x, p.y - pen.points[0]!.y) < 0.4
+              pen.points.length >= 3
+              && Math.hypot(p.x - pen.points[0]!.x, p.y - pen.points[0]!.y) < 0.4
             ) {
               state.commitPolygon();
             } else {
@@ -338,18 +400,16 @@ export function EditorCanvas() {
         }
       }
 
-      // Pick the most SPECIFIC thing under the cursor, not the nearest. A seat sits on a
-      // table which sits in a room, and all three are under the pointer at once; depth
-      // order is a fragile way to choose between them, and the one the admin means is
-      // always the innermost.
+      // ---- The pointer tool, and only the pointer tool, from here. ----
+
       // Grips win over everything: they sit on top of the entity they belong to, and a
-      // click on one is never meant for the shape underneath.
+      // press on one is never meant for the shape underneath.
       graph?.updateMatrixWorld(true);
       const gripHit = graph
         ? raycaster.intersectObjects(graph.children, true)
             .find((h) => (h.object.userData as { handle?: HandleData }).handle)
         : undefined;
-      if (gripHit && state.editable) {
+      if (gripHit) {
         const handle = (gripHit.object.userData as { handle: HandleData }).handle;
         dragRef.current = { mode: 'handle', handle, parent: parentWorld(s, handle.selection) };
         state.beginDrag();
@@ -357,43 +417,13 @@ export function EditorCanvas() {
         return;
       }
 
-      const specificity = SPECIFICITY;
-      // Raycasting reads matrixWorld, which three.js refreshes during render. A graph
-      // rebuilt since the last frame still carries identity matrices, so every room
-      // tests as if it sat at the origin: clicks land on whichever room happens to
-      // overlap the origin and nothing else is hit at all.
-      graph?.updateMatrixWorld(true);
-      const hits = graph ? raycaster.intersectObjects(graph.children, true) : [];
-      // Anything already held wins over anything that is not, before specificity even
-      // comes into it. Duplicates land near their originals and tables are routinely
-      // stacked while a layout is being worked out, so a press on a pile where one member
-      // IS the group must grab the group. Without this the press lands on whichever
-      // overlapping thing happens to be nearest, the group collapses to that one, and
-      // dragging a duplicated row moves a single table.
-      const isHeld = new Set(state.selection.map((x) => `${x.type}:${x.id}`));
-      const picked = hits
-        .filter((h) => (h.object.userData as { pick?: PickData }).pick)
-        .sort((a, b) => {
-          const sa = (a.object.userData as { pick: PickData }).pick.selection;
-          const sb = (b.object.userData as { pick: PickData }).pick.selection;
-          const ha = isHeld.has(`${sa.type}:${sa.id}`) ? 0 : 1;
-          const hb = isHeld.has(`${sb.type}:${sb.id}`) ? 0 : 1;
-          return ha - hb
-            || specificity[sa.type] - specificity[sb.type]
-            || a.distance - b.distance;
-        })[0];
-      if (!picked) {
-        // Empty floor. Shift keeps what is held — otherwise sweeping a second group would
-        // throw away the first — and a plain press begins a box.
+      const pick = pickAt(state.selection);
+      if (!pick) {
+        // Bare floor. Clearing is all a press does here — starting a rubber band is the
+        // sweep tool's job, and doing it from the pointer is what took the grips away.
         if (!event.shiftKey) state.setSelection([]);
-        if (state.view === '2D' && state.mode === 'PLAN' && state.editable) {
-          dragRef.current = { mode: 'marquee', from: world.clone(), to: world.clone(), room: null };
-          marqueeRef.current = { from: { x: world.x, y: world.y }, to: { x: world.x, y: world.y } };
-          renderer.domElement.setPointerCapture(event.pointerId);
-        }
         return;
       }
-      const pick = (picked.object.userData as { pick: PickData }).pick;
 
       if (event.shiftKey) {
         state.toggleSelection(pick.selection);
@@ -405,21 +435,7 @@ export function EditorCanvas() {
       const alreadyHeld = state.selection.some(
         (x) => x.type === pick.selection.type && x.id === pick.selection.id,
       );
-
-      if (state.view === '3D') {
-        state.setSelection([pick.selection]);
-        return; // 3D is for review, not authoring
-      }
-      if (state.mode === 'BOOK') {
-        state.setSelection([pick.selection]);
-        return; // booking selects a seat; it never moves one
-      }
-
       if (!alreadyHeld) state.setSelection([pick.selection]);
-      // A published layout is a record of what people are booking against, not a
-      // scratchpad. Letting it drag would move it on screen and then lose the move,
-      // because the save is gated on exactly this condition.
-      if (!state.editable) return;
 
       dragRef.current = { mode: 'move', last: world.clone() };
       state.beginDrag();
@@ -501,12 +517,15 @@ export function EditorCanvas() {
         const state = useEditorStore.getState();
         const moved = Math.hypot(drag.to.x - drag.from.x, drag.to.y - drag.from.y) > CLICK_SLOP;
         if (!moved) {
-          // A press that went nowhere swept nothing. Clear the box BEFORE touching the
-          // store: zustand notifies subscribers synchronously, so a rebuild triggered by
-          // setSelection would read this ref while it still held the box, and nothing
-          // afterwards would rebuild again.
+          // A press that went nowhere swept nothing — and leaving the sweep tool armed
+          // after it would strand someone in a mode where clicking appears to do nothing
+          // at all, which reads exactly like selection being broken. A click means the
+          // pointer back, and whatever was clicked selected.
           dragRef.current = null;
           marqueeRef.current = null;
+          const pick = pickAt(state.selection);
+          state.setTool('SELECT');
+          state.setSelection(pick ? [pick.selection] : []);
           requestRebuild();
           renderer.domElement.style.cursor = 'grab';
           renderer.domElement.releasePointerCapture?.(event.pointerId);
