@@ -8,6 +8,7 @@ import {
   type PlacementRule,
   type SeatOverride,
 } from '@seat-booking/geometry';
+import { arrangeTablesEvenly, type ArrangeResult } from '@/editor/arrange';
 import type {
   FurnitureJson,
   GateJson,
@@ -116,6 +117,13 @@ interface EditorState extends UndoableState {
 
   setTableRule: (tableId: string, placement: PlacementJson) => void;
   regenerateSeats: (tableId: string) => void;
+  /**
+   * Put a room's tables on an even grid and let the rule re-place every chair.
+   *
+   * <p>Returns what it did so the caller can say whether a zone came out crowded; the
+   * change itself is one entry in history, because "arrange the room" is one decision.
+   */
+  arrangeRoom: (roomId: string) => ArrangeResult;
   clearSeatOverride: (seatId: string) => void;
   deleteSelected: () => void;
   addRoom: (shape: ShapeJson, at: { x: number; y: number }) => void;
@@ -424,6 +432,37 @@ export const useEditorStore = create<EditorState>()(
         set((state) =>
           state.scene ? { ...state, scene: regenerate(state.scene, tableId), dirty: true } : state,
         ),
+
+      arrangeRoom: (roomId) => {
+        const current = get().scene;
+        if (!current) return { moves: [], crowded: [] };
+        const result = arrangeTablesEvenly(current, roomId);
+        if (result.moves.length === 0) return result;
+
+        set((state) => {
+          if (!state.scene) return state;
+          let scene = state.scene;
+          for (const move of result.moves) {
+            scene = updateFurniture(scene, move.tableId, (f) => ({
+              ...f,
+              transform: { ...f.transform, x: move.x, y: move.y },
+            }));
+          }
+          // Pinned chairs are usually WHY a room looks uneven, so arranging releases them
+          // back to the table's rule. Collected first: the loop below replaces the scene
+          // on every step, and iterating a list that is being rebuilt underneath you is
+          // how half the chairs get missed.
+          const pinned = scene.seats
+            .filter((seat) => seat.override && result.moves.some((m) => m.tableId === seat.tableId))
+            .map((seat) => seat.id);
+          for (const seatId of pinned) {
+            scene = updateSeat(scene, seatId, (seat) => ({ ...seat, override: false }));
+          }
+          for (const move of result.moves) scene = regenerate(scene, move.tableId);
+          return { ...state, scene, dirty: true };
+        });
+        return result;
+      },
 
       clearSeatOverride: (seatId) =>
         set((state) => {

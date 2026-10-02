@@ -1,6 +1,10 @@
 'use client';
 
-import { Armchair, Info, LayoutGrid, Loader2, PencilRuler, Pin, PinOff, Table2, Trash2 } from 'lucide-react';
+import {
+  AlignHorizontalDistributeCenter, Armchair, Info, LayoutGrid, Loader2, PencilRuler, Pin,
+  PinOff, Table2, Trash2,
+} from 'lucide-react';
+import { toast } from 'sonner';
 import type { PlacementJson, ShapeJson } from '@/api/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -232,6 +236,12 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
         onChange={(rot) => rotateEntity(selection, rot)}
       />
 
+      <Separator />
+
+      <ArrangeButton roomId={room.id} disabled={!canEdit} />
+
+      <Separator />
+
       <Field label="Rate per hour">
         <Input
           type="number"
@@ -368,6 +378,48 @@ function SeatInspector({ canEdit }: { canEdit: boolean }) {
         </p>
       </div>
     </Shell>
+  );
+}
+
+/**
+ * Lay the room's tables out on an even grid.
+ *
+ * <p>Deliberately one button and no options. The useful choices — how many columns, how
+ * wide the gaps — are the ones the room's own shape and the chairs' own size already
+ * answer, and asking would mean asking every time. If the result is not wanted, undo is
+ * one keystroke and puts every table back at once.
+ */
+function ArrangeButton({ roomId, disabled }: { roomId: string; disabled: boolean }) {
+  const arrangeRoom = useEditorStore((s) => s.arrangeRoom);
+  const tables = useEditorStore(
+    (s) => s.scene?.furniture.filter((f) => f.roomId === roomId).length ?? 0,
+  );
+
+  if (tables === 0) return null;
+
+  const run = () => {
+    const { moves, crowded } = arrangeRoom(roomId);
+    if (crowded.length > 0) {
+      // Not an error: the tables ARE arranged, as evenly as the space allows. But the
+      // validator is about to object, and hearing it here beats hearing it at publish.
+      const worst = crowded[0]!;
+      toast.warning('Arranged, but it is tight', {
+        description:
+          `${worst.zone} holds ${worst.tables} tables and has comfortable room for about ` +
+          `${worst.fits}. Make the room bigger, or use fewer or smaller tables.`,
+      });
+    } else {
+      toast.success('Tables arranged', {
+        description: `${moves.length} tables evenly spaced, chairs re-placed around them.`,
+      });
+    }
+  };
+
+  return (
+    <Button variant="outline" className="w-full" disabled={disabled} onClick={run}>
+      <AlignHorizontalDistributeCenter className="size-4" />
+      Arrange tables evenly
+    </Button>
   );
 }
 

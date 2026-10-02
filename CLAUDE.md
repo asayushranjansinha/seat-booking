@@ -38,6 +38,15 @@ Rules:
 - The Java side uses JTS for predicates (`contains`, `intersects`, `buffer`,
   `Polygonizer`). Do not hand-write computational geometry where correctness counts.
 
+### What does NOT need a twin
+
+`apps/web/src/editor/` holds geometry the browser runs **once**, to decide where to put
+something, and then writes down as an ordinary transform the server already knows how to
+store and validate — `arrange.ts` is the first of these. It needs no fixture and no Java
+counterpart, because nothing re-derives it: the result IS the stored position. Keep that
+boundary sharp. The moment a calculation has to be reproduced from stored data rather than
+read back from it, it belongs in `packages/geometry` with a fixture, in both languages.
+
 ## Conventions
 
 - **Rings** are closed polygons stored **without** a repeated final point, wound CCW.
