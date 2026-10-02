@@ -43,6 +43,8 @@ export function BookPanel({ floorId, canManage }: { floorId: string | null; canM
   const [bookings, setBookings] = useState<BookingJson[]>([]);
   const [meetings, setMeetings] = useState<MeetingJson[]>([]);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState('book');
+  const setSelection = useEditorStore((s) => s.setSelection);
 
   const refresh = useCallback(async () => {
     if (!floorId) return;
@@ -66,6 +68,11 @@ export function BookPanel({ floorId, canManage }: { floorId: string | null; canM
   const seat = selection?.type === 'seat' ? scene?.seats.find((s) => s.id === selection.id) ?? null : null;
   const table = selection?.type === 'furniture' ? scene?.furniture.find((f) => f.id === selection.id) ?? null : null;
   const seatStatus: SeatStatus | null = seat ? occupancy[seat.id] ?? 'BLOCKED' : null;
+
+  const tableSeats = table ? (scene?.seats.filter((s) => s.tableId === table.id) ?? []) : [];
+  const freeOnTable = tableSeats
+    .filter((s) => (occupancy[s.id] ?? 'BLOCKED') === 'FREE')
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   const hours = Math.ceil((window_.to - window_.from) / 3_600_000);
 
   const book = async () => {
@@ -110,7 +117,7 @@ export function BookPanel({ floorId, canManage }: { floorId: string | null; canM
   };
 
   return (
-    <Tabs defaultValue="book" className="flex h-full flex-col gap-0">
+    <Tabs value={tab} onValueChange={setTab} className="flex h-full flex-col gap-0">
       <TabsList className="m-3 grid shrink-0 grid-cols-3">
         <TabsTrigger value="book"><Armchair className="size-3.5" />Book</TabsTrigger>
         <TabsTrigger value="mine">
@@ -129,7 +136,48 @@ export function BookPanel({ floorId, canManage }: { floorId: string | null; canM
         <SeatLegend />
         <Separator />
 
-        {!seat && (
+        {/*
+          * Clicking a TABLE used to land here and be told to pick a seat, which is what
+          * the person thought they had just done: at a zoom that fits a floor, a seat is
+          * a four-pixel dot and a table is the thing under the pointer. So a table now
+          * answers with the seats on it.
+          */}
+        {!seat && table && (
+          <div className="space-y-3 rounded-lg border bg-card p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-lg font-semibold">{table.label ?? 'Table'}</span>
+              <Badge variant="secondary">{tableSeats.length} seats</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {freeOnTable.length > 0
+                ? 'Pick one of its free seats, or click the seat itself on the plan.'
+                : 'Every seat on this table is taken for the window above.'}
+            </p>
+            {freeOnTable.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {freeOnTable.map((s) => (
+                  <Button
+                    key={s.id}
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 font-mono text-xs"
+                    onClick={() => setSelection([{ type: 'seat', id: s.id }])}
+                  >
+                    {s.code}
+                  </Button>
+                ))}
+              </div>
+            )}
+            {canManage && (
+              <Button variant="secondary" className="w-full" onClick={() => setTab('meetings')}>
+                <Users className="size-4" />
+                Hold the whole table for a meeting
+              </Button>
+            )}
+          </div>
+        )}
+
+        {!seat && !table && (
           <EmptyState
             icon={<MousePointerClick className="size-5" />}
             title="Pick a seat"
