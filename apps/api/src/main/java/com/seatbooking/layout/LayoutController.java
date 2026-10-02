@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -99,15 +100,36 @@ public class LayoutController {
                 .body(result);
     }
 
+    /**
+     * Start a draft on this floor, optionally copying another floor's layout into it.
+     *
+     * <p>{@code from} is a parameter rather than its own endpoint because it is the same
+     * act either way: this floor gets a draft. The only difference is where the contents
+     * come from.
+     */
     @PostMapping("/floors/{floorId}/draft")
-    public SceneDto createDraft(@PathVariable UUID floorId, Authentication authentication) {
+    public SceneDto createDraft(@PathVariable UUID floorId,
+                                @RequestParam(required = false) UUID from,
+                                Authentication authentication) {
         CurrentUser caller = CurrentUser.from(authentication);
+        requireFloor(floorId, caller);
+        if (from == null) {
+            return layouts.createDraft(floorId, caller.organizationId(), caller.id());
+        }
+        // Checked the same way as the target: a floor in someone else's organisation must
+        // be indistinguishable from one that does not exist, or this reads back whether
+        // an id is real.
+        requireFloor(from, caller);
+        return layouts.createDraftFrom(floorId, from, caller.organizationId(), caller.id());
+    }
+
+    private Floor requireFloor(UUID floorId, CurrentUser caller) {
         Floor floor = floors.findById(floorId).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "No such floor: " + floorId));
         if (!floor.getOrganizationId().equals(caller.organizationId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No such floor: " + floorId);
         }
-        return layouts.createDraft(floorId, caller.organizationId(), caller.id());
+        return floor;
     }
 
     @GetMapping("/floors/{floorId}/published")

@@ -2,12 +2,15 @@
 
 import {
   AlignHorizontalDistributeCenter, AlignVerticalSpaceAround, Armchair, Building2, Frame,
-  DoorOpen, Grid3x3, Group, Info, LayoutGrid, Loader2,
-  PencilRuler, Pin, SplitSquareVertical,
+  Columns3, Copy, DoorOpen, Grid3x3, Group, Info, LayoutGrid, Loader2,
+  PencilRuler, Pin, Rows3, SplitSquareVertical,
   PinOff, Table2, Trash2,
 } from 'lucide-react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import type { PlacementJson, ShapeJson } from '@/api/types';
+import { cellsForGrid, partitionsForGrid } from '@/editor/divide';
+import { ruleSuitsShape, whyRuleCannotApply } from '@/editor/placementRules';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,14 +33,17 @@ const num = (v: string, fallback: number) => {
  * selection now gets only its own controls, under a heading that says what is selected.
  */
 export function InspectorPanel({
-  noLayout, noEstate, canStart, onStart, onAddBuilding, starting,
+  noLayout, noEstate, canStart, onStart, onAddBuilding, starting, copySources,
 }: {
   noLayout: boolean;
   noEstate: boolean;
   canStart: boolean;
-  onStart: () => void;
+  /** Starts a draft. With a floor id, copies that floor's layout into it instead. */
+  onStart: (fromFloorId?: string) => void;
   onAddBuilding: () => void;
   starting: boolean;
+  /** Other floors that have been drawn, and so have something worth copying. */
+  copySources: Array<{ id: string; label: string }>;
 }) {
   const scene = useEditorStore((s) => s.scene);
   const selection = useSingleSelection();
@@ -52,7 +58,16 @@ export function InspectorPanel({
 
   // A floor with nothing on it is a normal state, not an error. Rendering nothing here
   // leaves an admin staring at an empty grid with no way to begin.
-  if (!scene && noLayout) return <EmptyFloor canStart={canStart} onStart={onStart} starting={starting} />;
+  if (!scene && noLayout) {
+    return (
+      <EmptyFloor
+        canStart={canStart}
+        onStart={onStart}
+        starting={starting}
+        copySources={copySources}
+      />
+    );
+  }
   if (!scene) return null;
   // Several things at once: there is no single width to type, so the panel reports what
   // is held and offers the operations that do make sense for a group.
@@ -273,12 +288,15 @@ function GroupSelection({ canEdit }: { canEdit: boolean }) {
 }
 
 function EmptyFloor({
-  canStart, onStart, starting,
+  canStart, onStart, starting, copySources,
 }: {
   canStart: boolean;
-  onStart: () => void;
+  onStart: (fromFloorId?: string) => void;
   starting: boolean;
+  copySources: Array<{ id: string; label: string }>;
 }) {
+  const [from, setFrom] = useState<string | null>(null);
+
   return (
     <Shell icon={<PencilRuler className="size-4" />} title="Empty floor" subtitle="Nothing drawn yet">
       <p className="text-sm leading-relaxed text-muted-foreground">
@@ -289,10 +307,51 @@ function EmptyFloor({
 
       {canStart && (
         <>
-          <Button className="w-full" onClick={onStart} disabled={starting}>
+          <Button className="w-full" onClick={() => onStart()} disabled={starting}>
             {starting && <Loader2 className="size-4 animate-spin" />}
             Start drawing
           </Button>
+
+          {copySources.length > 0 && (
+            <>
+              <div className="flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-[11px] text-muted-foreground">or</span>
+                <Separator className="flex-1" />
+              </div>
+
+              <Field label="Copy a layout from another floor">
+                <Select
+                  disabled={starting}
+                  value={from ?? undefined}
+                  onValueChange={setFrom}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a floor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {copySources.map((source) => (
+                      <SelectItem key={source.id} value={source.id}>{source.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Rooms, tables and seats are copied into a new draft on this floor. The
+                  floor they came from is not touched.
+                </p>
+              </Field>
+
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={starting || from === null}
+                onClick={() => from && onStart(from)}
+              >
+                {starting ? <Loader2 className="size-4 animate-spin" /> : <Copy className="size-4" />}
+                Copy that layout here
+              </Button>
+            </>
+          )}
 
           <Separator />
 
@@ -411,6 +470,10 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
 
       <Separator />
 
+      <DivideRoom roomId={room.id} disabled={!canEdit} />
+
+      <Separator />
+
       <Field label="Rate per hour">
         <Input
           type="number"
@@ -493,6 +556,7 @@ function TableInspector({ canEdit }: { canEdit: boolean }) {
           <Separator />
           <SeatRuleFields
             placement={placement}
+            shape={table.shape}
             disabled={!canEdit}
             onChange={(next) => setTableRule(table.id, next)}
           />
@@ -624,6 +688,110 @@ function SeatInspector({ canEdit }: { canEdit: boolean }) {
  * answer, and asking would mean asking every time. If the result is not wanted, undo is
  * one keystroke and puts every table back at once.
  */
+/** The most bands anyone divides a floor into before it stops being a floor plan. */
+const MAX_BANDS = 12;
+
+/**
+ * Cut the room into a grid of cabins.
+ *
+ * <p>The other way to make a partition is to click one wall and then another, and the
+ * line between them is only as square as those two clicks were. Twelve cabins need five
+ * of those, each crooked in its own direction. Here the counts are the input and the
+ * walls are derived, so they come out parallel by construction and cross at right angles.
+ *
+ * <p>Both directions are set at once rather than applied one after the other, because a
+ * second pass would have to either throw the first set away or guess how to merge with
+ * it. Leaving a count at 1 cuts only the other way.
+ */
+function DivideRoom({ roomId, disabled }: { roomId: string; disabled: boolean }) {
+  const divideRoom = useEditorStore((s) => s.divideRoom);
+  const existing = useEditorStore(
+    (s) => s.scene?.rooms.find((r) => r.id === roomId)?.partitions.length ?? 0,
+  );
+  const [columns, setColumns] = useState(4);
+  const [rows, setRows] = useState(3);
+
+  const walls = partitionsForGrid(columns, rows);
+  const cells = cellsForGrid(columns, rows);
+  const clamp = (v: string, fallback: number) =>
+    Math.min(MAX_BANDS, Math.max(1, Math.round(num(v, fallback))));
+
+  const run = () => {
+    const made = divideRoom(roomId, columns, rows);
+    if (made === 0) {
+      toast.error('Nothing to divide', {
+        description: columns < 2 && rows < 2
+          ? 'Set the columns or the rows above one.'
+          : 'The room is too narrow across that direction to cut.',
+      });
+      return;
+    }
+    toast.success(`Divided into ${columns} × ${rows}`, {
+      description: existing > 0
+        ? `${made} straight partition${made === 1 ? '' : 's'} making ${cells} cabins, `
+          + `replacing the ${existing} that ${existing === 1 ? 'was' : 'were'} there.`
+        : `${made} straight partition${made === 1 ? '' : 's'} making ${cells} cabins, `
+          + 'evenly spaced and square to the room.',
+    });
+  };
+
+  return (
+    <div className="space-y-2.5">
+      <Field label="Divide the room">
+        <div className="flex items-center gap-2">
+          <div className="flex-1 space-y-1">
+            <Input
+              type="number"
+              min={1}
+              max={MAX_BANDS}
+              step={1}
+              disabled={disabled}
+              value={columns}
+              aria-label="Columns"
+              onChange={(e) => setColumns(clamp(e.target.value, 4))}
+            />
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Columns3 className="size-3" />
+              columns
+            </span>
+          </div>
+
+          <span className="pb-5 text-sm text-muted-foreground">×</span>
+
+          <div className="flex-1 space-y-1">
+            <Input
+              type="number"
+              min={1}
+              max={MAX_BANDS}
+              step={1}
+              disabled={disabled}
+              value={rows}
+              aria-label="Rows"
+              onChange={(e) => setRows(clamp(e.target.value, 3))}
+            />
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Rows3 className="size-3" />
+              rows
+            </span>
+          </div>
+        </div>
+      </Field>
+
+      <Button variant="outline" className="w-full" disabled={disabled} onClick={run}>
+        <LayoutGrid className="size-4" />
+        {`Divide into ${cells} cabin${cells === 1 ? '' : 's'}`}
+      </Button>
+
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {walls === 0
+          ? 'Set a count above one to cut the room.'
+          : `${walls === 1 ? 'One partition' : `${walls} partitions`}, evenly spaced and exactly parallel.`}
+        {existing > 0 && ` Replaces the ${existing} already in this room.`}
+      </p>
+    </div>
+  );
+}
+
 function ArrangeButton({ roomId, disabled }: { roomId: string; disabled: boolean }) {
   const arrangeRoom = useEditorStore((s) => s.arrangeRoom);
   const tables = useEditorStore(
@@ -772,13 +940,16 @@ function RotationField({
 }
 
 function SeatRuleFields({
-  placement, disabled, onChange,
+  placement, shape, disabled, onChange,
 }: {
   placement: PlacementJson;
+  /** The table's own outline: not every rule can be applied to every shape. */
+  shape: ShapeJson;
   disabled: boolean;
   onChange: (placement: PlacementJson) => void;
 }) {
   const clearance = placement.kind === 'MANUAL' ? 0.45 : placement.clearance;
+  const radialReason = whyRuleCannotApply('RADIAL', shape);
 
   return (
     <div className="space-y-4">
@@ -788,7 +959,10 @@ function SeatRuleFields({
           value={placement.kind}
           onValueChange={(kind) => {
             if (kind === 'PERIMETER_EVEN') onChange({ kind, count: 8, startOffset: 0, clearance });
-            else if (kind === 'RADIAL') onChange({ kind, count: 6, startAngle: 0, clearance });
+            else if (kind === 'RADIAL') {
+              if (!ruleSuitsShape('RADIAL', shape)) return;
+              onChange({ kind, count: 6, startAngle: 0, clearance });
+            }
             else if (kind === 'EDGE_COUNTS') onChange({ kind, counts: { top: 3, bottom: 3, left: 1, right: 1 }, clearance });
             else onChange({ kind: 'MANUAL' });
           }}
@@ -797,7 +971,12 @@ function SeatRuleFields({
           <SelectContent>
             <SelectItem value="PERIMETER_EVEN">Evenly around the edge</SelectItem>
             <SelectItem value="EDGE_COUNTS">A set number per side</SelectItem>
-            <SelectItem value="RADIAL">Radially (round tables)</SelectItem>
+            <SelectItem value="RADIAL" disabled={radialReason !== null}>
+              Radially
+              <span className="ml-1.5 text-muted-foreground">
+                {radialReason ?? '(round tables)'}
+              </span>
+            </SelectItem>
             <SelectItem value="MANUAL">Placed by hand</SelectItem>
           </SelectContent>
         </Select>

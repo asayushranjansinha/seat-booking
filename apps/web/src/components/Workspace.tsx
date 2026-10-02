@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { resolveShortcut } from '@/editor/shortcuts';
 import { api, ApiError } from '@/api/client';
@@ -188,17 +188,46 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
     }
   }, [scene, dirty, etag, markSaved, setViolations, loadScene, refreshBuildings]);
 
-  const createDraft = useCallback(async () => {
+  /**
+   * Floors whose layout could be copied onto this one: anything but this floor that has
+   * been drawn. A floor with nothing on it is not offered, because copying it would do
+   * nothing and the only way to find that out would be to try.
+   */
+  const copySources = useMemo(
+    () => buildings.flatMap((building) => building.floors
+      .filter((f) => f.id !== floorId && (f.publishedVersionId ?? f.draftVersionId))
+      .map((f) => ({
+        id: f.id,
+        label: buildings.length > 1 ? `${building.name} — ${f.name}` : f.name,
+      }))),
+    [buildings, floorId],
+  );
+
+  const createDraft = useCallback(async (fromFloorId?: string) => {
     if (!floorId) return;
+    // Passed straight to onClick in places, which hands a React event to the first
+    // argument. A MouseEvent stringifies to "[object Object]" and the server answers
+    // "Invalid UUID string", so anything that is not a floor id is treated as absent.
+    const source = typeof fromFloorId === 'string' ? fromFloorId : undefined;
     setBusy('drafting');
     try {
-      const draft = await api.createDraft(floorId);
+      const draft = await api.createDraft(floorId, source);
       loadScene(draft, String(draft.revision));
       setNoLayout(false);
       await refreshBuildings();
-      toast.success('Editable draft created', { description: 'Changes stay private until you publish.' });
+      toast.success(
+        source ? 'Layout copied' : 'Editable draft created',
+        {
+          description: source
+            ? `${draft.rooms.length} rooms, ${draft.furniture.length} tables and `
+              + `${draft.seats.length} seats copied in. Nothing is live until you publish.`
+            : 'Changes stay private until you publish.',
+        },
+      );
     } catch (e) {
-      toast.error('Could not start a draft', { description: describe(e) });
+      toast.error(source ? 'Could not copy that layout' : 'Could not start a draft', {
+        description: describe(e),
+      });
     } finally {
       setBusy(null);
     }
@@ -365,6 +394,7 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
               onStart={createDraft}
               onAddBuilding={() => setEstateOpen(true)}
               starting={busy === 'drafting'}
+              copySources={copySources}
             />
           ) : (
             <BookPanel

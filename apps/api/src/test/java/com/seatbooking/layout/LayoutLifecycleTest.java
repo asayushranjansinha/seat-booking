@@ -259,4 +259,82 @@ class LayoutLifecycleTest {
                 .query(Integer.class).single();
     }
 
+
+    // ------------------------------------------------- copying a floor onto another
+
+    /** A second floor in the same building, with nothing on it. */
+    private Floor blankFloor() {
+        Floor existing = demoFloor();
+        com.seatbooking.domain.Floor made = new com.seatbooking.domain.Floor(
+                existing.getOrganizationId(), existing.getBuildingId(), "Copy target",
+                existing.getLevel() + 7);
+        return floors.save(made);
+    }
+
+    @Test
+    @DisplayName("copying a floor reproduces its layout on another floor, in full")
+    void copyReproducesTheLayout() {
+        Floor source = demoFloor();
+        SceneDto from = layouts.getScene(publishedVersionId(source.getId()));
+        Floor target = blankFloor();
+
+        SceneDto copy = layouts.createDraftFrom(
+                target.getId(), source.getId(), target.getOrganizationId(), adminId());
+
+        assertEquals(from.rooms().size(), copy.rooms().size());
+        assertEquals(from.furniture().size(), copy.furniture().size());
+        assertEquals(from.seats().size(), copy.seats().size());
+        // Seat codes are what a seat means to the person who booked it, so they carry over.
+        assertEquals(
+                from.seats().stream().map(seat -> seat.code()).collect(Collectors.toSet()),
+                copy.seats().stream().map(seat -> seat.code()).collect(Collectors.toSet()));
+        assertEquals(PlanStatus.DRAFT, versions.findById(copy.planVersionId()).orElseThrow().getStatus());
+        assertTrue(layouts.validate(copy.planVersionId()).isEmpty(), "a copied layout must still be valid");
+    }
+
+    @Test
+    @DisplayName("the copy owns its own rows, so editing it cannot touch the floor it came from")
+    void copyDoesNotCannibaliseTheSource() {
+        Floor source = demoFloor();
+        UUID sourceVersion = publishedVersionId(source.getId());
+        int before = layouts.getScene(sourceVersion).seats().size();
+        Floor target = blankFloor();
+
+        SceneDto copy = layouts.createDraftFrom(
+                target.getId(), source.getId(), target.getOrganizationId(), adminId());
+
+        // Not one id in common: saveScene remaps anything belonging to another version.
+        // Sharing even one row would mean editing the first floor edited the ground floor.
+        Set<UUID> sourceIds = layouts.getScene(sourceVersion).seats().stream()
+                .map(seat -> seat.id()).collect(Collectors.toSet());
+        Set<UUID> copyIds = copy.seats().stream().map(seat -> seat.id()).collect(Collectors.toSet());
+        assertTrue(java.util.Collections.disjoint(sourceIds, copyIds), "the copy shares rows with its source");
+
+        // And the source still has everything it started with.
+        assertEquals(before, layouts.getScene(sourceVersion).seats().size());
+        assertEquals(PlanStatus.PUBLISHED,
+                versions.findById(sourceVersion).orElseThrow().getStatus());
+    }
+
+    @Test
+    @DisplayName("copying onto a floor that already has a draft is refused, not silently merged")
+    void copyWillNotDestroyAnExistingDraft() {
+        Floor source = demoFloor();
+        Floor target = blankFloor();
+        layouts.createDraftFrom(target.getId(), source.getId(), target.getOrganizationId(), adminId());
+
+        // The draft is unpublished work that exists nowhere else.
+        ResponseStatusException e = assertThrows(ResponseStatusException.class, () ->
+                layouts.createDraftFrom(target.getId(), source.getId(), target.getOrganizationId(), adminId()));
+        assertEquals(409, e.getStatusCode().value());
+    }
+
+    @Test
+    @DisplayName("a floor cannot be copied onto itself")
+    void copyOntoSelfIsRefused() {
+        Floor floor = demoFloor();
+        ResponseStatusException e = assertThrows(ResponseStatusException.class, () ->
+                layouts.createDraftFrom(floor.getId(), floor.getId(), floor.getOrganizationId(), adminId()));
+        assertEquals(400, e.getStatusCode().value());
+    }
 }

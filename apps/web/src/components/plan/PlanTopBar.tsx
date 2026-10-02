@@ -187,7 +187,7 @@ export function PlanTopBar({
 
         {!canEdit && (scene || noLayout) && canStart && (
           <Button size="sm" variant={noLayout ? 'default' : 'outline'} className="ml-2"
-            onClick={onCreateDraft} disabled={busy !== null}>
+            onClick={() => onCreateDraft()} disabled={busy !== null}>
             {busy === 'drafting' && <Loader2 className="size-3.5 animate-spin" />}
             {noLayout ? 'Start drawing' : 'Edit layout'}
           </Button>

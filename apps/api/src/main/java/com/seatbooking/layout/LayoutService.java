@@ -272,6 +272,49 @@ public class LayoutService {
         return getScene(draft.getId());
     }
 
+    /**
+     * Start a draft on one floor from another floor's layout.
+     *
+     * <p>Floors in a building are usually near-copies of each other, and redrawing twelve
+     * tables and ninety-six seats by hand to get the same thing twice is the sort of work
+     * a plan tool exists to remove.
+     *
+     * <p>Nothing here knows how to clone: {@link #saveScene} already remaps any id that
+     * belongs to another version, which is exactly what a scene from another floor is.
+     * The source is left completely untouched — it is read, never written.
+     */
+    @Transactional
+    public SceneDto createDraftFrom(UUID targetFloorId, UUID sourceFloorId,
+                                    UUID organizationId, UUID userId) {
+        if (targetFloorId.equals(sourceFloorId)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A floor cannot be copied onto itself.");
+        }
+        // Refused rather than overwritten. A draft is unpublished work that exists nowhere
+        // else, and silently replacing it with a copy of another floor would destroy it
+        // with no way back.
+        if (versions.findByFloorIdAndStatus(targetFloorId, PlanStatus.DRAFT).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "This floor already has a draft. Discard it before copying a layout onto it.");
+        }
+
+        // The published layout is what "copy this floor" means to the person asking; a
+        // draft is only the fallback for a floor that has never been published.
+        FloorPlanVersion source = versions
+                .findByFloorIdAndStatus(sourceFloorId, PlanStatus.PUBLISHED)
+                .or(() -> versions.findByFloorIdAndStatus(sourceFloorId, PlanStatus.DRAFT))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "That floor has no layout to copy."));
+        SceneDto from = getScene(source.getId());
+
+        FloorPlanVersion draft = new FloorPlanVersion(organizationId, targetFloorId,
+                versions.maxVersionNo(targetFloorId) + 1, PlanStatus.DRAFT, userId);
+        versions.save(draft);
+        versions.flush();
+        saveScene(draft.getId(), from, null);
+        return getScene(draft.getId());
+    }
+
     // ------------------------------------------------------------------------ publish
 
     public record PublishResult(boolean published, List<Violation> violations,

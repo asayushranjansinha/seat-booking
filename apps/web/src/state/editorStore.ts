@@ -9,6 +9,8 @@ import {
   type SeatOverride,
 } from '@seat-booking/geometry';
 import { arrangeTablesEvenly, type ArrangeResult } from '@/editor/arrange';
+import { gridCuts } from '@/editor/divide';
+import { ruleSuitsShape } from '@/editor/placementRules';
 import { extract, nextSeatPrefix, paste as pasteClip, type Clip } from '@/editor/clipboard';
 import { alignAcross, spaceEvenly, type Shift } from '@/editor/distribute';
 import { rotateDelta } from '@/editor/extent';
@@ -182,7 +184,18 @@ interface EditorState extends UndoableState {
     selection: NonNullable<Selection>, x: number, y: number, snapToGrid?: boolean,
   ) => void;
   rotateEntity: (selection: NonNullable<Selection>, rot: number) => void;
-  resizeShape: (selection: NonNullable<Selection>, shape: ShapeJson) => void;
+  /**
+   * Resize an entity, optionally moving its origin so the anchor grip stays still.
+   *
+   * <p>`origin` is the entity's new position in its PARENT's frame, not a delta. A drag
+   * recomputes it from where the drag started on every pointer move, so an absolute
+   * value lands on the same answer however many events arrive; adding up deltas would
+   * drift a little further with each one. Omitted when nothing has to move, which is the
+   * case for a dimension typed into the inspector.
+   */
+  resizeShape: (
+    selection: NonNullable<Selection>, shape: ShapeJson, origin?: { x: number; y: number },
+  ) => void;
   renameRoom: (roomId: string, name: string) => void;
   setRoomRate: (roomId: string, rate: number | null) => void;
   setRoomKind: (roomId: string, kind: 'ROOM' | 'CABIN') => void;
@@ -227,6 +240,17 @@ interface EditorState extends UndoableState {
   startPolygon: (p: { x: number; y: number }) => void;
   addPolygonPoint: (p: { x: number; y: number }) => void;
   commitPolygon: () => void;
+  /**
+   * Cut a room into a grid of cabins, replacing whatever partitions it had.
+   *
+   * <p>Both directions at once: four columns and three rows is one decision, and doing it
+   * in two passes would mean the second throwing the first away. Replacing rather than
+   * adding for the same reason — "divide this room 4 by 3" is a statement about the
+   * finished room, and leaving the old walls would answer it with something else.
+   *
+   * <p>Returns how many partitions it made, so the caller can say so.
+   */
+  divideRoom: (roomId: string, columns: number, rows: number) => number;
   startPartition: (roomId: string, start: { x: number; y: number }) => void;
   commitPartition: (end: { x: number; y: number }) => void;
   cancelDrawing: () => void;
@@ -370,13 +394,25 @@ function regenerate(scene: SceneJson, tableId: string): SceneJson {
       rot: s.localTransform.rot,
     }));
 
-  const placements = placeSeats({
-    shape: shapeFromJson(table.shape),
-    clearance: placement.clearance,
-    rule: toRule(placement),
-    overrides,
-    tolerance: 1e-3,
-  });
+  // placeSeats throws for a rule the shape cannot satisfy — radial on a rectangle has no
+  // radius to work from. Inside a store action that throw is an unhandled render error:
+  // the whole editor drops to a crash overlay and the layout cannot be reached again
+  // without a reload. Callers are expected to have checked with `ruleSuitsShape` first,
+  // so reaching this is a bug; leaving the seats alone keeps it a bug in one table
+  // rather than the end of the session.
+  let placements;
+  try {
+    placements = placeSeats({
+      shape: shapeFromJson(table.shape),
+      clearance: placement.clearance,
+      rule: toRule(placement),
+      overrides,
+      tolerance: 1e-3,
+    });
+  } catch (error) {
+    console.error('Could not place seats for table', tableId, error);
+    return scene;
+  }
 
   const byIndex = new Map(placements.map((p) => [p.index, p]));
   const wanted = ruleSeatCount(placement, tableSeats.length);
@@ -603,15 +639,63 @@ export const useEditorStore = create<EditorState>()(
           return { ...state, scene, dirty: true };
         }),
 
-      resizeShape: (selection, shape) =>
+      resizeShape: (selection, shape, origin) =>
         set((state) => {
           if (!state.scene) return state;
           let scene = state.scene;
+
+          /**
+           * How far this entity actually moved, in its OWN frame.
+           *
+           * <p>Children are stored in that frame, so this is what has to come back out of
+           * them. Taken as the step from wherever the entity is right now, which makes a
+           * stream of absolute positions compose correctly without the caller having to
+           * remember what it last sent.
+           */
+          const stepInOwnFrame = (t: TransformJson) => {
+            if (!origin) return { x: 0, y: 0 };
+            const dx = origin.x - t.x;
+            const dy = origin.y - t.y;
+            const cos = Math.cos(-t.rot);
+            const sin = Math.sin(-t.rot);
+            return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+          };
+
           if (selection.type === 'room') {
-            scene = updateRoom(scene, selection.id, (r) => ({ ...r, shape }));
+            const room = scene.rooms.find((r) => r.id === selection.id);
+            if (!room) return state;
+            const d = stepInOwnFrame(room.transform);
+            scene = updateRoom(scene, selection.id, (r) => ({
+              ...r,
+              shape,
+              transform: origin ? { ...r.transform, x: origin.x, y: origin.y } : r.transform,
+            }));
+            // Everything inside a room is stored in the room's own space, so moving the
+            // room would carry the furniture along with it and a resize from a corner
+            // would look like a drag. Taking the move back out of each child leaves them
+            // on the floor exactly where they were, which is what anchoring has to mean.
+            if (d.x !== 0 || d.y !== 0) {
+              scene = {
+                ...scene,
+                furniture: scene.furniture.map((f) => (f.roomId === selection.id
+                  ? { ...f, transform: { ...f.transform, x: f.transform.x - d.x, y: f.transform.y - d.y } }
+                  : f)),
+                // Only the seats parented to the room itself. A seat at a table is stored
+                // in the TABLE's space, and that table has already been compensated.
+                seats: scene.seats.map((s) => (s.roomId === selection.id && s.tableId === null
+                  ? { ...s, localTransform: { ...s.localTransform, x: s.localTransform.x - d.x, y: s.localTransform.y - d.y } }
+                  : s)),
+              };
+            }
           } else if (selection.type === 'furniture') {
-            scene = updateFurniture(scene, selection.id, (f) => ({ ...f, shape }));
+            scene = updateFurniture(scene, selection.id, (f) => ({
+              ...f,
+              shape,
+              transform: origin ? { ...f.transform, x: origin.x, y: origin.y } : f.transform,
+            }));
             // The table outline changed, so the seats must redistribute in proportion.
+            // They are stored in the table's space and the rule re-places them, so unlike
+            // a room's contents there is nothing to compensate.
             scene = regenerate(scene, selection.id);
           } else {
             scene = updateSeat(scene, selection.id, (s) => ({ ...s, shape }));
@@ -652,6 +736,14 @@ export const useEditorStore = create<EditorState>()(
       setTableRule: (tableId, placement) =>
         set((state) => {
           if (!state.scene) return state;
+          const table = state.scene.furniture.find((f) => f.id === tableId);
+          if (!table) return state;
+          // Checked BEFORE the rule is written, not after. Storing a rule the table
+          // cannot satisfy and failing to regenerate would leave the seats describing one
+          // arrangement and the rule describing another, and every later regeneration
+          // would fail the same way.
+          if (!ruleSuitsShape(placement.kind, table.shape)) return state;
+
           const scene = {
             ...state.scene,
             seats: state.scene.seats.map((s) => (s.tableId === tableId ? { ...s, placement } : s)),
@@ -860,6 +952,32 @@ export const useEditorStore = create<EditorState>()(
             dirty: true,
           };
         }),
+
+      divideRoom: (roomId, columns, rows) => {
+        const current = get().scene;
+        const room = current?.rooms.find((r) => r.id === roomId);
+        if (!room) return 0;
+
+        const cuts = gridCuts(room.shape, columns, rows);
+        if (cuts.length === 0) return 0;
+
+        const partitions: PartitionJson[] = cuts.map((polyline) => ({
+          id: uuid(),
+          polyline,
+          thickness: 0.12,
+        }));
+        set((state) => (state.scene
+          ? {
+            ...state,
+            scene: updateRoom(state.scene, roomId, (r) => ({ ...r, partitions })),
+            // Any partition that was selected has just been deleted, and a selection
+            // pointing at a row that no longer exists is how an inspector ends up blank.
+            selection: state.selection.filter((x) => x.type !== 'partition'),
+            dirty: true,
+          }
+          : state));
+        return partitions.length;
+      },
 
       startPartition: (roomId, start) => set({ drawing: { kind: 'PARTITION', roomId, start } }),
 

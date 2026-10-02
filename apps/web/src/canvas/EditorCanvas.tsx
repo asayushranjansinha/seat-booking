@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { applyTransform, composeTransform, invertTransform } from '@seat-booking/geometry';
 import { useEditorStore, type Selection, type SelectionItem } from '@/state/editorStore';
 import { resizedShape } from '@/editor/resize';
@@ -80,7 +81,9 @@ export function EditorCanvas() {
     // A group moves by a DELTA from where the pointer was last frame, not to an absolute
     // position: there is no single position a group is at.
     | { mode: 'move'; last: THREE.Vector2 }
-    | { mode: 'handle'; handle: HandleData; parent: TransformJson }
+    // `origin` is where the entity sat when the drag began. Every move recomputes the new
+    // position from it rather than nudging the last one, so no rounding accumulates.
+    | { mode: 'handle'; handle: HandleData; parent: TransformJson; origin: TransformJson }
     // `room` is the room the sweep began on top of, if any: a press that never moves is
     // a click, and a click on a room selects it.
     | { mode: 'marquee'; from: THREE.Vector2; to: THREE.Vector2; room: string | null }
@@ -437,7 +440,17 @@ export function EditorCanvas() {
           case 'TABLE_RECT':
           case 'TABLE_ROUND': {
             const room = roomAt(s, world);
-            if (!room) return; // a table belongs to a room, so a click outside one does nothing
+            if (!room) {
+              // A table belongs to a room, so there is nowhere to put this one. Saying so
+              // matters more than it looks: the click used to do nothing at all, which is
+              // indistinguishable from the tool being broken.
+              toast.error('A table has to go inside a room', {
+                description: s.rooms.length === 0
+                  ? 'Draw a room first, then place the table in it.'
+                  : 'Click inside a room outline, not on the floor around it.',
+              });
+              return;
+            }
             const local = applyTransform(invertTransform(room.transform), { x: world.x, y: world.y });
             state.addTable(
               room.id,
@@ -448,7 +461,12 @@ export function EditorCanvas() {
           }
           case 'GATE': {
             const wall = nearestWall(s, world, 1.0);
-            if (!wall) return;
+            if (!wall) {
+              toast.error('A door has to sit on a wall', {
+                description: 'Click within a metre of one, and it will snap onto it.',
+              });
+              return;
+            }
             // Keep the gate clear of the corners: offsetT is its centre, so half its
             // width has to fit either side or the validator will reject it.
             const width = Math.min(1.2, wall.wallLength * 0.8);
@@ -461,7 +479,12 @@ export function EditorCanvas() {
             // Both ends must meet the room boundary, so each click snaps to the nearest
             // wall rather than landing wherever the pointer happened to be.
             const wall = nearestWall(s, world, 1.5);
-            if (!wall) return;
+            if (!wall) {
+              toast.error('A partition has to meet a wall', {
+                description: 'Both ends snap to the room boundary, so start near one.',
+              });
+              return;
+            }
             const room = s.rooms.find((r) => r.id === wall.roomId);
             if (!room) return;
             const localPoint = applyTransform(invertTransform(room.transform), wall.point);
@@ -469,6 +492,13 @@ export function EditorCanvas() {
               state.startPartition(room.id, localPoint);
             } else if (state.drawing.roomId === room.id) {
               state.commitPartition(localPoint);
+            } else {
+              // The far end landed on a different room's wall. A partition divides ONE
+              // room, so there is nothing sensible to draw — and silently ignoring the
+              // click leaves a half-drawn partition following the pointer with no clue why.
+              toast.error('A partition stays inside one room', {
+                description: 'Finish it on a wall of the room it started in, or press Escape.',
+              });
             }
             return;
           }
@@ -488,7 +518,16 @@ export function EditorCanvas() {
         : undefined;
       if (gripHit) {
         const handle = (gripHit.object.userData as { handle: HandleData }).handle;
-        dragRef.current = { mode: 'handle', handle, parent: parentWorld(s, handle.selection) };
+        // Rooms hand their grips an identity local transform — the room's own transform
+        // lives on the group above them — so the starting position is read from the scene
+        // rather than from the handle.
+        const entity = handle.selection.type === 'room'
+          ? s.rooms.find((r) => r.id === handle.selection.id)
+          : handle.selection.type === 'furniture'
+            ? s.furniture.find((f) => f.id === handle.selection.id)
+            : undefined;
+        const origin = entity?.transform ?? { x: 0, y: 0, rot: 0 };
+        dragRef.current = { mode: 'handle', handle, parent: parentWorld(s, handle.selection), origin };
         state.beginDrag();
         renderer.domElement.setPointerCapture(event.pointerId);
         return;
@@ -560,14 +599,22 @@ export function EditorCanvas() {
         } else {
           const entityWorld = composeTransform(parent, handle.local);
           const inEntity = applyTransform(invertTransform(entityWorld), { x: world.x, y: world.y });
-          state.resizeShape(
-            handle.selection,
-            resizedShape(handle.shape, handle.index, { x: inEntity.x, y: inEntity.y }, {
-              free: event.shiftKey,
+          const { shape, offset } = resizedShape(
+            handle.shape, handle.index, { x: inEntity.x, y: inEntity.y }, {
+              lockRatio: event.shiftKey,
+              fromCenter: event.altKey,
               gridSnap: state.gridSnap,
               snapEnabled: state.snapEnabled,
-            }),
+            },
           );
+          // The offset is in the entity's own frame; its position is kept in its parent's.
+          const { origin } = drag;
+          const cos = Math.cos(origin.rot);
+          const sin = Math.sin(origin.rot);
+          state.resizeShape(handle.selection, shape, {
+            x: origin.x + offset.x * cos - offset.y * sin,
+            y: origin.y + offset.x * sin + offset.y * cos,
+          });
         }
         return;
       }
