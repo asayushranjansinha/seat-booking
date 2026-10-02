@@ -20,7 +20,7 @@ describe('resolveShortcut', () => {
     expect(resolveShortcut(press('2'), true)).toEqual({ kind: 'tool', tool: 'MARQUEE' });
     expect(resolveShortcut(press('6'), true)).toEqual({ kind: 'tool', tool: 'TABLE_RECT' });
     expect(resolveShortcut(press('9'), true)).toEqual({ kind: 'tool', tool: 'PARTITION' });
-    expect(resolveShortcut(press('0'), true)).toBeNull();
+    expect(resolveShortcut(press('x'), true)).toBeNull();
   });
 
   it('offers the digit, not V, as a tool\u2019s printed shortcut', () => {
@@ -56,6 +56,15 @@ describe('resolveShortcut', () => {
     expect(resolveShortcut(press('ArrowUp', { shiftKey: true }), true))
       .toEqual({ kind: 'nudge', dx: 0, dy: 1, big: true });
     expect(resolveShortcut(press('ArrowUp'), false)).toBeNull();
+  });
+
+  it('frames the floor on 0, and on Shift+1 as Figma does', () => {
+    // Two keys on purpose. The moment this is needed is the moment the plan is off
+    // screen, which is the moment someone is least able to go and look a shortcut up.
+    expect(resolveShortcut(press('0'), true)).toEqual({ kind: 'fitView' });
+    expect(resolveShortcut(press('!', { shiftKey: true }), true)).toEqual({ kind: 'fitView' });
+    // and it works on a layout nobody can edit, because looking is not editing
+    expect(resolveShortcut(press('0'), false)).toEqual({ kind: 'fitView' });
   });
 
   it('leaves Alt combinations alone', () => {

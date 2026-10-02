@@ -74,6 +74,10 @@ export function EditorCanvas() {
     // `room` is the room the sweep began on top of, if any: a press that never moves is
     // a click, and a click on a room selects it.
     | { mode: 'marquee'; from: THREE.Vector2; to: THREE.Vector2; room: string | null }
+    // Panning works in every mode and with every tool, so it is tracked in SCREEN pixels
+    // — the world under the pointer is what is moving, so world coordinates would chase
+    // themselves.
+    | { mode: 'pan'; lastClientX: number; lastClientY: number }
     | null
   >(null);
   const marqueeRef = useRef<{ from: { x: number; y: number }; to: { x: number; y: number } } | null>(null);
@@ -88,6 +92,15 @@ export function EditorCanvas() {
     // notify every subscriber for something only the canvas draws — so the handlers have
     // to ask for the redraw themselves. Assigned once `rebuild` exists, below.
     let requestRebuild = () => {};
+
+    /**
+     * Whether the space bar is down.
+     *
+     * <p>Held in a variable rather than the store: it changes on every press and release
+     * of a key, only the canvas cares, and putting it in the store would re-render the
+     * whole editor to move a camera.
+     */
+    let spaceHeld = false;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -120,8 +133,11 @@ export function EditorCanvas() {
     let controls: OrbitControls<THREE.OrthographicCamera | THREE.PerspectiveCamera> =
       new OrbitControls(ortho, renderer.domElement);
     controls.enableRotate = false;
+    // Zoom and the middle button are handled here instead: OrbitControls dollies on the
+    // wheel, which is the behaviour that makes a trackpad unusable.
+    controls.enableZoom = false;
     controls.target.set(6, 4, 0);
-    controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+    controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
     controls.update();
 
     /** Metres visible across the viewport width in the top-down view. */
@@ -144,6 +160,7 @@ export function EditorCanvas() {
       const aspect = Math.max(el.clientWidth / Math.max(el.clientHeight, 1), 0.1);
       // Fit the larger of width and height-scaled-by-aspect, with a margin.
       orthoSpan = Math.max(size.x, size.y * aspect) * 1.25 + 2;
+      ortho.zoom = 1; // the span IS the zoom here; a leftover factor would double it
       ortho.position.set(centre.x, centre.y, 60);
       controls.target.set(centre.x, centre.y, 0);
       perspective.position.set(centre.x, centre.y - size.y * 1.3, Math.max(size.x, size.y) * 0.8);
@@ -167,6 +184,52 @@ export function EditorCanvas() {
       perspective.aspect = aspect;
       perspective.updateProjectionMatrix();
     };
+    /** Metres per screen pixel, at the current zoom. */
+    const metresPerPixel = () => (orthoSpan / ortho.zoom) / Math.max(el.clientWidth, 1);
+
+    /**
+     * Slide the view, in screen pixels.
+     *
+     * <p>Moving the camera and its target together, because an orthographic camera looks
+     * along a fixed axis: the target is what keeps the two in step when the view is later
+     * rotated into 3D and back.
+     */
+    const panByPixels = (dxPixels: number, dyPixels: number) => {
+      const scale = metresPerPixel();
+      // Screen y grows downward, world y upward.
+      const dx = -dxPixels * scale;
+      const dy = dyPixels * scale;
+      ortho.position.x += dx;
+      ortho.position.y += dy;
+      controls.target.x += dx;
+      controls.target.y += dy;
+      controls.update();
+    };
+
+    const MIN_SPAN = 2;      // about two metres across: close enough to place one chair
+    const MAX_SPAN = 4000;   // a very large campus, still on screen
+
+    /**
+     * Zoom about a point on screen, so whatever is under the pointer stays under it.
+     *
+     * <p>Zooming about the centre instead is the thing that makes a plan feel like it is
+     * running away: the detail you are reaching for slides off while you magnify it.
+     */
+    const zoomAt = (factor: number, clientX: number, clientY: number) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const before = screenToWorld(clientX, clientY, rect);
+      const next = Math.min(MAX_SPAN, Math.max(MIN_SPAN, (orthoSpan / ortho.zoom) * factor));
+      ortho.zoom = 1;
+      orthoSpan = next;
+      resize();
+      const after = screenToWorld(clientX, clientY, rect);
+      ortho.position.x += before.x - after.x;
+      ortho.position.y += before.y - after.y;
+      controls.target.x += before.x - after.x;
+      controls.target.y += before.y - after.y;
+      controls.update();
+    };
+
     const observer = new ResizeObserver(resize);
     observer.observe(el);
     resize();
@@ -175,6 +238,16 @@ export function EditorCanvas() {
     // that into the span so hit-testing and the view agree.
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+
+    /** Where a point on screen lands on the floor, without needing a pointer event. */
+    function screenToWorld(clientX: number, clientY: number, rect: DOMRect): THREE.Vector2 {
+      pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const hit = new THREE.Vector3();
+      raycaster.ray.intersectPlane(GROUND, hit);
+      return new THREE.Vector2(hit.x, hit.y);
+    }
 
     const toWorld = (event: PointerEvent): THREE.Vector2 => {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -303,6 +376,17 @@ export function EditorCanvas() {
       const s = state.scene;
       if (!s) return;
       const world = toWorld(event);
+
+      // Space held, or the middle button: pan. Checked before anything else because
+      // moving the view is not editing — it has to work from inside any tool, over any
+      // object, on a published layout, without first putting something down.
+      if ((spaceHeld || event.button === 1) && state.view === '2D') {
+        dragRef.current = { mode: 'pan', lastClientX: event.clientX, lastClientY: event.clientY };
+        renderer.domElement.style.cursor = 'grabbing';
+        renderer.domElement.setPointerCapture(event.pointerId);
+        event.preventDefault();
+        return;
+      }
 
       // Booking picks a seat to book. Nothing moves, whatever tool is showing.
       if (state.mode === 'BOOK') {
@@ -463,6 +547,13 @@ export function EditorCanvas() {
         if (state.drawing) state.setCursor({ x: world.x, y: world.y });
         return;
       }
+      if (drag.mode === 'pan') {
+        panByPixels(event.clientX - drag.lastClientX, event.clientY - drag.lastClientY);
+        drag.lastClientX = event.clientX;
+        drag.lastClientY = event.clientY;
+        return;
+      }
+
       renderer.domElement.style.cursor = 'grabbing';
 
       if (drag.mode === 'handle') {
@@ -512,6 +603,13 @@ export function EditorCanvas() {
     const onPointerUp = (event: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
+
+      if (drag.mode === 'pan') {
+        dragRef.current = null;
+        renderer.domElement.style.cursor = spaceHeld ? 'grab' : 'default';
+        renderer.domElement.releasePointerCapture?.(event.pointerId);
+        return;
+      }
 
       if (drag.mode === 'marquee') {
         const state = useEditorStore.getState();
@@ -652,11 +750,72 @@ export function EditorCanvas() {
         controls.dispose();
         controls = new OrbitControls(ortho, renderer.domElement);
         controls.enableRotate = false;
+        controls.enableZoom = false;
         controls.target.set(6, 4, 0);
-        controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+        controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
         controls.update();
       }
     };
+
+    /**
+     * Space to pan, the way every canvas editor works.
+     *
+     * <p>On window rather than the canvas, because the key is usually pressed before the
+     * pointer has been put anywhere in particular, and ignored while typing so that a
+     * space in a room's name does not grab the view.
+     */
+    const isTyping = (target: EventTarget | null) =>
+      target instanceof HTMLElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName);
+
+    const onSpaceDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat || isTyping(e.target)) return;
+      spaceHeld = true;
+      // Space scrolls the page by default, which on a full-height editor does nothing
+      // visible but does steal the key.
+      e.preventDefault();
+      if (!dragRef.current) renderer.domElement.style.cursor = 'grab';
+    };
+    const onSpaceUp = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return;
+      spaceHeld = false;
+      if (!dragRef.current) renderer.domElement.style.cursor = 'default';
+    };
+    window.addEventListener('keydown', onSpaceDown);
+    window.addEventListener('keyup', onSpaceUp);
+    // Losing focus mid-drag otherwise leaves the canvas convinced space is still down.
+    const onBlur = () => { spaceHeld = false; };
+    window.addEventListener('blur', onBlur);
+
+    /**
+     * Scroll to pan, pinch or Cmd-scroll to zoom.
+     *
+     * <p>The convention every design tool now shares, and the one a trackpad expects: two
+     * fingers slide the drawing, and a pinch — which a browser reports as a wheel event
+     * with ctrlKey set, whatever key is actually held — magnifies it. Wheel-to-zoom is
+     * what three.js does out of the box and it makes a trackpad almost unusable, so
+     * OrbitControls' own zoom is turned off for the flat view.
+     */
+    const onWheel = (e: WheelEvent) => {
+      if (useEditorStore.getState().view !== '2D') return; // 3D keeps the orbit controls
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        // A pinch reports a few units per step; a mouse wheel reports a hundred. Damping
+        // by an exponential keeps both usable without a device check.
+        zoomAt(Math.exp(e.deltaY * 0.01), e.clientX, e.clientY);
+        return;
+      }
+      panByPixels(-e.deltaX, -e.deltaY);
+    };
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+    // A plan can be left off screen — panned away, or drawn far from where the view
+    // happens to be — and then there is no gesture that finds it again, because every
+    // gesture is relative to where you already are. This is the way back.
+    const onFitRequested = () => {
+      const current = useEditorStore.getState().scene;
+      if (current) frameToContent(current);
+    };
+    window.addEventListener('seatbooking:fit-view', onFitRequested);
 
     requestRebuild = rebuild;
     const unsubscribe = useEditorStore.subscribe(rebuild);
@@ -674,6 +833,11 @@ export function EditorCanvas() {
       cancelAnimationFrame(raf);
       unsubscribe();
       observer.disconnect();
+      window.removeEventListener('seatbooking:fit-view', onFitRequested);
+      window.removeEventListener('keydown', onSpaceDown);
+      window.removeEventListener('keyup', onSpaceUp);
+      window.removeEventListener('blur', onBlur);
+      renderer.domElement.removeEventListener('wheel', onWheel);
       renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
       renderer.domElement.removeEventListener('pointerdown', onPointerDown);
       renderer.domElement.removeEventListener('pointermove', onPointerMove);

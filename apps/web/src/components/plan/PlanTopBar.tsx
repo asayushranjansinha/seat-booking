@@ -2,7 +2,7 @@
 
 import {
   Box, BoxSelect, Check, ClipboardPaste, CloudUpload, Copy, CopyPlus, Loader2, Magnet,
-  Redo2, Square, Trash2, Undo2,
+  Maximize, Redo2, Square, Trash2, Undo2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -167,6 +167,15 @@ export function PlanTopBar({
             <Separator orientation="vertical" className="mx-1 h-6" />
           </>
         )}
+
+        <IconButton
+          label="Fit to view"
+          hint="Frames the whole floor. The way back when the plan has been panned off screen."
+          keys={['0']}
+          onClick={() => window.dispatchEvent(new Event('seatbooking:fit-view'))}
+        >
+          <Maximize className="size-4" />
+        </IconButton>
 
         <IconButton
           label={view === '2D' ? 'Switch to the 3D review view' : 'Back to the 2D plan'}

@@ -265,6 +265,10 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
         case 'tool':
           setTool(action.tool);
           return;
+        case 'fitView':
+          e.preventDefault();
+          window.dispatchEvent(new Event('seatbooking:fit-view'));
+          return;
         case 'selectAll':
           e.preventDefault();
           store.selectAll();

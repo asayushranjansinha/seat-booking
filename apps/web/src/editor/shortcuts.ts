@@ -17,6 +17,7 @@ export type Shortcut =
   | { kind: 'tool'; tool: Tool }
   | { kind: 'duplicate' }
   | { kind: 'selectAll' }
+  | { kind: 'fitView' }
   | { kind: 'undo' }
   | { kind: 'redo' }
   | { kind: 'delete' }
@@ -86,6 +87,9 @@ export function resolveShortcut(e: KeyEventLike, canEdit: boolean): Shortcut | n
   if (e.altKey) return null;
 
   if (e.key === 'Escape') return { kind: 'cancel' };
+  // Shift+1 frames everything, as it does in Figma. Also on plain `0`, because the plan
+  // being off screen is exactly the moment someone is least able to look a shortcut up.
+  if (e.key === '0' || (e.shiftKey && e.key === '!')) return { kind: 'fitView' };
   if (e.key === 'Delete' || e.key === 'Backspace') return canEdit ? { kind: 'delete' } : null;
   const tool = TOOL_KEYS[key];
   if (tool) return { kind: 'tool', tool };
