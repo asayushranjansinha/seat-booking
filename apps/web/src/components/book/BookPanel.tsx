@@ -83,6 +83,21 @@ export function BookPanel({ floorId, canManage }: { floorId: string | null; canM
     }
   };
 
+  /**
+   * Which of my bookings makes this seat mine right now.
+   *
+   * <p>The canvas colours a seat MINE by comparing it against the window being viewed, so
+   * the booking to cancel is the one that OVERLAPS that window — not merely one on the
+   * same seat. Someone with a desk booked twice in a day would otherwise be shown a
+   * cancel button for whichever happened to come back first.
+   */
+  const bookingHere = seat
+    ? bookings.find((b) => b.seatId === seat.id
+      && b.status === 'CONFIRMED'
+      && new Date(b.startsAt).getTime() < window_.to
+      && new Date(b.endsAt).getTime() > window_.from)
+    : undefined;
+
   const cancel = async (b: BookingJson) => {
     setBusy(true);
     try {
@@ -138,10 +153,30 @@ export function BookPanel({ floorId, canManage }: { floorId: string | null; canM
                 </span>
               </div>
             )}
-            <Button className="w-full" disabled={busy || seatStatus !== 'FREE'} onClick={book}>
-              {busy && <Loader2 className="size-4 animate-spin" />}
-              {seatStatus === 'FREE' ? 'Book this seat' : STATUS_LABEL[seatStatus]}
-            </Button>
+            {seatStatus === 'MINE' && bookingHere ? (
+              // Clicking your own seat used to reach a disabled button reading "Booked by
+              // you" — true, and a dead end. Cancelling was only possible from the Mine
+              // tab, which is not where you are when you have just clicked the seat.
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {when(bookingHere.startsAt)} – {when(bookingHere.endsAt)}
+                </p>
+                <Button
+                  variant="destructive"
+                  className="w-full"
+                  disabled={busy}
+                  onClick={() => cancel(bookingHere)}
+                >
+                  {busy && <Loader2 className="size-4 animate-spin" />}
+                  Cancel this booking
+                </Button>
+              </>
+            ) : (
+              <Button className="w-full" disabled={busy || seatStatus !== 'FREE'} onClick={book}>
+                {busy && <Loader2 className="size-4 animate-spin" />}
+                {seatStatus === 'FREE' ? 'Book this seat' : STATUS_LABEL[seatStatus]}
+              </Button>
+            )}
           </div>
         )}
       </TabsContent>
