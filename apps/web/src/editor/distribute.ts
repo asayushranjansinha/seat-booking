@@ -133,12 +133,29 @@ export function spaceEvenly(scene: SceneJson, selection: readonly SelectionItem[
   // edge from the start and the person can see they have asked for more than there is.
   const gap = Math.max(0, (sameRoomSpan - occupied) / slots);
 
+  // Spacing a row settles where it sits ALONG the floor; it says nothing about how far
+  // down the floor it sits. Leaving that alone produced rows that were evenly spaced left
+  // to right and visibly high or low in their own partition — 79 mm of floor above one
+  // row and 130 below it. So the group is also centred across its container, as a whole:
+  // every member moves by the same amount, which settles the row without flattening the
+  // arrangement within it. Putting them all on one line is what "Line up" is for.
+  const across = axis === 'x'
+    ? { lo: (b: Box) => b.minY, hi: (b: Box) => b.maxY }
+    : { lo: (b: Box) => b.minX, hi: (b: Box) => b.maxX };
+  const groupBox = ordered.map((m) => m.box).reduce(union);
+  const crossDelta = container
+    ? ((across.lo(container) + across.hi(container)) / 2)
+      - ((across.lo(groupBox) + across.hi(groupBox)) / 2)
+    : 0;
+
   const shifts: Shift[] = [];
   let cursor = container ? lo(container) + gap : lo(ordered[0]!.box);
   for (const m of ordered) {
-    const delta = cursor - lo(m.box);
-    if (Math.abs(delta) > 1e-9) {
-      shifts.push({ item: m.item, dx: axis === 'x' ? delta : 0, dy: axis === 'x' ? 0 : delta });
+    const along = cursor - lo(m.box);
+    const dx = axis === 'x' ? along : crossDelta;
+    const dy = axis === 'x' ? crossDelta : along;
+    if (Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9) {
+      shifts.push({ item: m.item, dx, dy });
     }
     cursor += size(m.box) + gap;
   }

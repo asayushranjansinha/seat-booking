@@ -35,19 +35,27 @@ function chair(tableId: string, offset: number): SeatJson {
   };
 }
 
-function scene(furniture: FurnitureJson[], seats: SeatJson[] = []): SceneJson {
+function scene(
+  furniture: FurnitureJson[], seats: SeatJson[] = [], subZones?: SceneJson['rooms'][number]['subZones'],
+): SceneJson {
   return {
     planVersionId: 'v', floorId: 'f', status: 'DRAFT', revision: 1,
     rooms: [{
       id: ROOM, name: 'Studio',
       shape: { kind: 'RECT', w: 60, h: 40 },
       transform: { x: 0, y: 0, rot: 0 },
-      height: 2.7, hourlyRate: null, partitions: [], gates: [],
+      height: 2.7, hourlyRate: null, partitions: [], gates: [], subZones,
     }],
     furniture,
     seats,
   };
 }
+
+/** The room cut into two horizontal bands by one partition, as the server derives them. */
+const BANDS: SceneJson['rooms'][number]['subZones'] = [
+  { index: 0, name: 'Zone A', area: 1200, ring: [[-30, 0], [30, 0], [30, 20], [-30, 20]] },
+  { index: 1, name: 'Zone B', area: 1200, ring: [[-30, -20], [30, -20], [30, 0], [-30, 0]] },
+];
 
 const pick = (...ids: string[]): SelectionItem[] =>
   ids.map((id) => ({ type: 'furniture', id }));
@@ -201,5 +209,51 @@ describe('alignAcross', () => {
   it('does nothing when they are already in line', () => {
     const s = scene([table('a', 0, 3), table('b', 10, 3), table('c', 20, 3)]);
     expect(alignAcross(s, pick('a', 'b', 'c'))).toEqual([]);
+  });
+});
+
+describe('spacing settles the row across its floor too', () => {
+  it('centres a row in the partition it sits in', () => {
+    // The report: three rows, each spaced perfectly left to right, each sitting visibly
+    // high or low in its own partition. Spacing picks ONE axis to distribute along; it
+    // used to leave the other untouched, so a row stayed wherever it had been dropped.
+    // Zone A runs y 0..20, so a row of 1 m-tall tables belongs at y = 10.
+    const s = scene([table('a', -20, 17), table('b', 0, 17), table('c', 20, 17)], [], BANDS);
+    const shifts = spaceEvenly(s, pick('a', 'b', 'c'));
+    for (const id of ['a', 'b', 'c']) {
+      const t = s.furniture.find((f) => f.id === id)!;
+      const dy = shifts.find((x) => x.item.id === id)?.dy ?? 0;
+      expect(t.transform.y + dy).toBeCloseTo(10, 9);
+    }
+  });
+
+  it('uses the partition it is in, not the whole room', () => {
+    // Zone B runs y -20..0. Centring on the ROOM would put this row at y = 0, on the
+    // partition line itself.
+    const s = scene([table('a', -20, -17), table('b', 0, -17), table('c', 20, -17)], [], BANDS);
+    const shifts = spaceEvenly(s, pick('a', 'b', 'c'));
+    const dy = shifts.find((x) => x.item.id === 'b')?.dy ?? 0;
+    expect(-17 + dy).toBeCloseTo(-10, 9);
+  });
+
+  it('moves the row as one, rather than flattening it onto a line', () => {
+    // b is deliberately a metre above its neighbours. Centring the GROUP keeps that;
+    // putting every member on the centre line is what Line up does, and spacing must not
+    // quietly do it too.
+    const s = scene([table('a', -20, 16), table('b', 0, 17), table('c', 20, 16)], [], BANDS);
+    const shifts = spaceEvenly(s, pick('a', 'b', 'c'));
+    const y = (id: string) =>
+      s.furniture.find((f) => f.id === id)!.transform.y
+      + (shifts.find((x) => x.item.id === id)?.dy ?? 0);
+    expect(y('b') - y('a')).toBeCloseTo(1, 9);
+    expect(y('a')).toBeCloseTo(y('c'), 9);
+    // and the group as a whole is centred: its extremes straddle y = 10
+    expect((y('b') + 0.5 + (y('a') - 0.5)) / 2).toBeCloseTo(10, 9);
+  });
+
+  it('leaves the cross axis alone when there is no container', () => {
+    const s = scene([table('a', 0, 0), table('b', 5, 0), table('c', 20, 0)]);
+    s.rooms[0] = { ...s.rooms[0]!, transform: { x: 0, y: 0, rot: 0.3 } };
+    expect(spaceEvenly(s, pick('a', 'b', 'c')).every((x) => x.dy === 0)).toBe(true);
   });
 });
