@@ -183,3 +183,90 @@ describe('moving things', () => {
     expect(useEditorStore.getState().editable).toBe(true);
   });
 });
+
+/**
+ * Everything on the plan can be removed.
+ *
+ * <p>Partitions and doors were drawn and nothing else: no pick data, so no way to select
+ * one, so no way to delete one without deleting the room around it.
+ */
+describe('deleting', () => {
+  const ROOM_B = '55555555-5555-5555-5555-555555555555';
+
+  function withFittings(): SceneJson {
+    const s = scene();
+    s.rooms[0] = {
+      ...s.rooms[0]!,
+      partitions: [
+        { id: 'p1', polyline: [[-6, 0], [6, 0]], thickness: 0.1 },
+        { id: 'p2', polyline: [[0, -4], [0, 4]], thickness: 0.1 },
+      ],
+      gates: [
+        { id: 'g1', wallEdgeIdx: 0, offsetT: 0.3, width: 1, type: 'DOOR' },
+        { id: 'g2', wallEdgeIdx: 2, offsetT: 0.5, width: 1.2, type: 'EMERGENCY' },
+      ],
+      subZones: [{ index: 0, name: 'Zone A', area: 10, ring: [[0, 0], [1, 0], [1, 1]] }],
+    };
+    return s;
+  }
+
+  beforeEach(() => {
+    useEditorStore.getState().loadScene(withFittings(), 'W/"1"');
+  });
+
+  const room = () => useEditorStore.getState().scene!.rooms[0]!;
+
+  it('removes one partition and leaves the other', () => {
+    store().setSelection([{ type: 'partition', id: 'p1', roomId: ROOM_ID }]);
+    store().deleteSelected();
+    expect(room().partitions.map((p) => p.id)).toEqual(['p2']);
+  });
+
+  it('drops the derived zones with it, rather than drawing zones that no longer exist', () => {
+    // Sub-zones are a function of the partitions and come back from the server. Keeping
+    // the old ones would draw a floor divided by a partition that had just been deleted.
+    expect(room().subZones).toHaveLength(1);
+    store().setSelection([{ type: 'partition', id: 'p1', roomId: ROOM_ID }]);
+    store().deleteSelected();
+    expect(room().subZones).toBeUndefined();
+  });
+
+  it('removes one door and leaves the other', () => {
+    store().setSelection([{ type: 'gate', id: 'g2', roomId: ROOM_ID }]);
+    store().deleteSelected();
+    expect(room().gates.map((g) => g.id)).toEqual(['g1']);
+  });
+
+  it('takes a partition and a door together', () => {
+    store().setSelection([
+      { type: 'partition', id: 'p2', roomId: ROOM_ID },
+      { type: 'gate', id: 'g1', roomId: ROOM_ID },
+    ]);
+    store().deleteSelected();
+    expect(room().partitions.map((p) => p.id)).toEqual(['p1']);
+    expect(room().gates.map((g) => g.id)).toEqual(['g2']);
+  });
+
+  it('leaves the room itself alone', () => {
+    store().setSelection([{ type: 'gate', id: 'g1', roomId: ROOM_ID }]);
+    store().deleteSelected();
+    expect(useEditorStore.getState().scene!.rooms).toHaveLength(1);
+    expect(useEditorStore.getState().scene!.furniture).toHaveLength(1);
+  });
+
+  it('still takes a room with everything in it', () => {
+    store().setSelection([{ type: 'room', id: ROOM_ID }]);
+    store().deleteSelected();
+    const after = useEditorStore.getState().scene!;
+    expect(after.rooms).toHaveLength(0);
+    expect(after.furniture).toHaveLength(0);
+    expect(after.seats).toHaveLength(0);
+    expect(ROOM_B).toBeTruthy();
+  });
+
+  it('clears the selection, so the panel cannot describe something that is gone', () => {
+    store().setSelection([{ type: 'partition', id: 'p1', roomId: ROOM_ID }]);
+    store().deleteSelected();
+    expect(useEditorStore.getState().selection).toEqual([]);
+  });
+});

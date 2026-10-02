@@ -35,13 +35,15 @@ interface Measured {
  * Only rooms and tables take part.
  *
  * <p>A seat's position is owned by its table's placement rule; nudging one into a line
- * would pin it, and the next regeneration would move everything around it. If someone has
- * swept up seats along with tables, the seats are left alone rather than quietly pinned.
+ * would pin it, and the next regeneration would move everything around it. A partition is
+ * anchored to two walls and a door lives on one, so neither has a position that can be
+ * shifted without redrawing it. Anything swept up alongside the tables is left alone
+ * rather than quietly mangled.
  */
 function measure(scene: SceneJson, selection: readonly SelectionItem[]): Measured[] {
   const out: Measured[] = [];
   for (const item of selection) {
-    if (item.type === 'seat') continue;
+    if (item.type !== 'room' && item.type !== 'furniture') continue;
     const box = worldBox(scene, item);
     if (box) out.push({ item, box });
   }

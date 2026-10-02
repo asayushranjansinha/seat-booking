@@ -31,7 +31,11 @@ import type {
 export type SelectionItem =
   | { type: 'room'; id: string }
   | { type: 'furniture'; id: string }
-  | { type: 'seat'; id: string };
+  | { type: 'seat'; id: string }
+  // A partition and a door belong to a room rather than to the floor, so they carry the
+  // room's id alongside their own: there is no index of them to look them up in.
+  | { type: 'partition'; id: string; roomId: string }
+  | { type: 'gate'; id: string; roomId: string };
 
 /**
  * One thing, or nothing.
@@ -542,7 +546,7 @@ export const useEditorStore = create<EditorState>()(
               scene = updateFurniture(scene, item.id, (f) => ({
                 ...f, transform: { ...f.transform, x: f.transform.x + local.x, y: f.transform.y + local.y },
               }));
-            } else {
+            } else if (item.type === 'seat') {
               const seat = scene.seats.find((s) => s.id === item.id);
               if (!seat) continue;
               if (movingRooms.has(seat.roomId)) continue;
@@ -562,6 +566,10 @@ export const useEditorStore = create<EditorState>()(
               }));
               if (seat.tableId) regenerateFor.add(seat.tableId);
             }
+            // Partitions are anchored to two walls and doors live on one, so neither can
+            // be shifted by a delta without being redrawn. They are selectable and
+            // deletable; they are not draggable, and a group drag passes over them rather
+            // than tearing them off their walls.
           }
 
           for (const tableId of regenerateFor) scene = regenerate(scene, tableId);
@@ -750,13 +758,32 @@ export const useEditorStore = create<EditorState>()(
           const rooms = new Set(selection.filter((x) => x.type === 'room').map((x) => x.id));
           const tables = new Set(selection.filter((x) => x.type === 'furniture').map((x) => x.id));
           const seats = new Set(selection.filter((x) => x.type === 'seat').map((x) => x.id));
+          // Partitions and doors live INSIDE their room rather than in a list of their
+          // own, so they are removed by rewriting the room that holds them.
+          const partitions = new Set(selection.filter((x) => x.type === 'partition').map((x) => x.id));
+          const gates = new Set(selection.filter((x) => x.type === 'gate').map((x) => x.id));
 
           // Deleting a room takes its tables and their seats with it, and deleting a
           // table takes its seats. Selecting a room AND one of its tables is therefore
           // not a conflict: the room wins and the table goes anyway.
           const next: SceneJson = {
             ...scene,
-            rooms: scene.rooms.filter((r) => !rooms.has(r.id)),
+            rooms: scene.rooms
+              .filter((r) => !rooms.has(r.id))
+              .map((r) => (
+                r.partitions.some((p) => partitions.has(p.id))
+                || r.gates.some((g) => gates.has(g.id))
+                  ? {
+                    ...r,
+                    partitions: r.partitions.filter((p) => !partitions.has(p.id)),
+                    gates: r.gates.filter((g) => !gates.has(g.id)),
+                    // Sub-zones are derived from the partitions by the server. Keeping
+                    // the old ones would draw zones divided by a partition that is no
+                    // longer there, until the next save came back.
+                    subZones: undefined,
+                  }
+                  : r
+              )),
             furniture: scene.furniture.filter((f) => !rooms.has(f.roomId) && !tables.has(f.id)),
             seats: scene.seats.filter((x) =>
               !rooms.has(x.roomId)

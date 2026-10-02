@@ -31,7 +31,16 @@ const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
  * over the very same scene graph, so the two views cannot disagree.
  */
 /** A seat sits on a table which sits in a room; the innermost one is always the target. */
-const SPECIFICITY = { seat: 0, furniture: 1, room: 2 } as const;
+const SPECIFICITY = {
+  seat: 0,
+  furniture: 1,
+  // A door and a partition sit ON a room's wall and are far smaller than it, so a press
+  // that finds both means the smaller one. Below furniture, because a table pushed up
+  // against a partition should still be the thing you grab.
+  gate: 2,
+  partition: 3,
+  room: 4,
+} as const;
 
 /** How far a press may wander, in metres, and still count as a click rather than a sweep. */
 const CLICK_SLOP = 0.1;

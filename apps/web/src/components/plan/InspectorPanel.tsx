@@ -2,8 +2,8 @@
 
 import {
   AlignHorizontalDistributeCenter, AlignVerticalSpaceAround, Armchair, Building2, Frame,
-  Grid3x3, Group, Info, LayoutGrid, Loader2,
-  PencilRuler, Pin,
+  DoorOpen, Grid3x3, Group, Info, LayoutGrid, Loader2,
+  PencilRuler, Pin, SplitSquareVertical,
   PinOff, Table2, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -60,6 +60,8 @@ export function InspectorPanel({
   if (!selection) return <Overview />;
   if (selection.type === 'room') return <RoomInspector canEdit={canEdit} />;
   if (selection.type === 'furniture') return <TableInspector canEdit={canEdit} />;
+  if (selection.type === 'partition') return <PartitionInspector canEdit={canEdit} />;
+  if (selection.type === 'gate') return <GateInspector canEdit={canEdit} />;
   return <SeatInspector canEdit={canEdit} />;
 }
 
@@ -189,15 +191,20 @@ function GroupSelection({ canEdit }: { canEdit: boolean }) {
   const deleteSelected = useEditorStore((s) => s.deleteSelected);
   const spaceEvenly = useEditorStore((s) => s.spaceSelectionEvenly);
   const align = useEditorStore((s) => s.alignSelection);
-  // Seats sit where their table's rule puts them, so they do not take part and must not
-  // be counted when deciding whether there is enough here to space.
-  const tables = selection.filter((x) => x.type !== 'seat').length;
+  // Only things with a position of their own can be spaced: a seat's belongs to its
+  // table's rule, a partition is anchored to two walls, a door lives on one. Counting
+  // them would offer to space a selection that nothing in it can move.
+  const tables = selection.filter(
+    (x) => x.type === 'room' || x.type === 'furniture',
+  ).length;
 
   const count = (type: string) => selection.filter((x) => x.type === type).length;
   const parts = [
     [count('room'), 'room', 'rooms'],
     [count('furniture'), 'table', 'tables'],
     [count('seat'), 'seat', 'seats'],
+    [count('partition'), 'partition', 'partitions'],
+    [count('gate'), 'door', 'doors'],
   ] as const;
 
   return (
@@ -491,6 +498,72 @@ function TableInspector({ canEdit }: { canEdit: boolean }) {
           />
         </>
       )}
+    </Shell>
+  );
+}
+
+function PartitionInspector({ canEdit }: { canEdit: boolean }) {
+  const scene = useEditorStore((s) => s.scene)!;
+  const selection = useSingleSelection()!;
+  const deleteSelected = useEditorStore((s) => s.deleteSelected);
+  if (selection.type !== 'partition') return null;
+
+  const room = scene.rooms.find((r) => r.id === selection.roomId);
+  const partition = room?.partitions.find((p) => p.id === selection.id);
+  if (!room || !partition) return null;
+
+  const length = partition.polyline.slice(1).reduce((sum, [x, y], i) => {
+    const [px, py] = partition.polyline[i]!;
+    return sum + Math.hypot(x - px, y - py);
+  }, 0);
+
+  return (
+    <Shell
+      icon={<SplitSquareVertical className="size-4" />}
+      title="Partition"
+      subtitle={`in ${room.name}`}
+      locked={!canEdit}
+      onDelete={canEdit ? deleteSelected : undefined}
+    >
+      <div className="space-y-2">
+        <Stat label="Length" value={`${length.toFixed(2)} m`} />
+        <Stat label="Thickness" value={`${partition.thickness.toFixed(2)} m`} />
+        <Stat label="Zones in this room" value={room.subZones?.length ?? 1} />
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Deleting it merges the zones either side back into one. The seats and tables stay
+        where they are — a partition divides the floor, it does not own anything.
+      </p>
+    </Shell>
+  );
+}
+
+function GateInspector({ canEdit }: { canEdit: boolean }) {
+  const scene = useEditorStore((s) => s.scene)!;
+  const selection = useSingleSelection()!;
+  const deleteSelected = useEditorStore((s) => s.deleteSelected);
+  if (selection.type !== 'gate') return null;
+
+  const room = scene.rooms.find((r) => r.id === selection.roomId);
+  const gate = room?.gates.find((g) => g.id === selection.id);
+  if (!room || !gate) return null;
+
+  return (
+    <Shell
+      icon={<DoorOpen className="size-4" />}
+      title={gate.type === 'EMERGENCY' ? 'Emergency exit' : 'Door'}
+      subtitle={`in ${room.name}`}
+      locked={!canEdit}
+      onDelete={canEdit ? deleteSelected : undefined}
+    >
+      <div className="space-y-2">
+        <Stat label="Width" value={`${gate.width.toFixed(2)} m`} />
+        <Stat label="On wall" value={`edge ${gate.wallEdgeIdx + 1}`} />
+        <Stat label="Along that wall" value={`${Math.round(gate.offsetT * 100)}%`} />
+      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Deleting it closes the wall back up, in the plan and in the 3D view.
+      </p>
     </Shell>
   );
 }

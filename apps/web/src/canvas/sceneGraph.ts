@@ -204,15 +204,26 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     }
 
     for (const partition of room.partitions) {
-      group.add(partitionMesh(
+      const partitionGroup = partitionMesh(
         partition.polyline,
         partition.thickness,
         // Shoulder height. A partition that reached the ceiling would be a wall, and the
         // 3D view would turn into a maze of boxes you cannot see over.
         Math.min(1.6, room.height * 0.6),
-        COLORS.partition,
+        isSelected('partition', partition.id) ? COLORS.roomEdgeSelected : COLORS.partition,
         view,
-      ));
+      );
+      // Every piece of it carries the pick, because a partition is drawn as one quad per
+      // segment and a dog-legged one would otherwise only respond on its first leg.
+      partitionGroup.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.userData.pick = {
+            selection: { type: 'partition', id: partition.id, roomId: room.id },
+            local: { x: 0, y: 0, rot: 0 },
+          } satisfies PickData;
+        }
+      });
+      group.add(partitionGroup);
     }
 
     const ring = ringFor(room.shape);
@@ -226,7 +237,9 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
       const half = gate.width / 2 / len;
       const t0 = gate.offsetT - half;
       const t1 = gate.offsetT + half;
-      const colour = gate.type === 'EMERGENCY' ? COLORS.emergency : COLORS.gate;
+      const colour = isSelected('gate', gate.id)
+        ? COLORS.roomEdgeSelected
+        : gate.type === 'EMERGENCY' ? COLORS.emergency : COLORS.gate;
 
       // The opening: the stretch of wall the door occupies, drawn over the wall so the
       // wall appears to stop there.
@@ -243,6 +256,19 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
       const door = doorMesh(gate.width, colour, view);
       door.position.set(a.x + dx * t0, a.y + dy * t0, 0);
       door.rotation.z = Math.atan2(dy, dx);
+
+      // A door is an arc and a leaf — two thin lines with almost no area to hit. The
+      // quarter it sweeps is the shape a person would aim at, so that is the target.
+      const reach = new THREE.Mesh(
+        new THREE.PlaneGeometry(gate.width, gate.width),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+      );
+      reach.position.set(gate.width / 2, gate.width / 2, 0.025);
+      reach.userData.pick = {
+        selection: { type: 'gate', id: gate.id, roomId: room.id },
+        local: { x: 0, y: 0, rot: 0 },
+      } satisfies PickData;
+      door.add(reach);
       group.add(door);
     }
   }
