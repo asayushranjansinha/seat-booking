@@ -727,20 +727,37 @@ export function EditorCanvas() {
       }
 
 
+      // Switching view must not move you. Both cameras used to be pointed at a
+      // hard-coded (6, 4, 0) — the middle of the floor the demo seed happens to sit on —
+      // so pressing 3D on a plan drawn anywhere else threw the whole layout into a
+      // corner, and pressing it again did the same on the way back. What carries across
+      // is the point you were looking at.
       if (view === '3D' && camera !== perspective) {
         camera = perspective;
+        const cx = ortho.position.x;
+        const cy = ortho.position.y;
+        // Stand back by roughly what the flat view was showing, so the 3D view opens on
+        // about the same amount of floor rather than a nose against one wall.
+        const span = Math.max(orthoSpan / ortho.zoom, 4);
+        perspective.position.set(cx, cy - span * 0.75, span * 0.55);
+
         controls.dispose();
         controls = new OrbitControls(perspective, renderer.domElement);
-        controls.target.set(6, 4, 0);
+        controls.target.set(cx, cy, 0);
         controls.enableDamping = true;
         controls.update();
       } else if (view === '2D' && camera !== ortho) {
         camera = ortho;
+        // Whatever was being orbited is what the plan centres on.
+        const cx = controls.target.x;
+        const cy = controls.target.y;
+        ortho.position.set(cx, cy, 60);
+
         controls.dispose();
         controls = new OrbitControls(ortho, renderer.domElement);
         controls.enableRotate = false;
         controls.enableZoom = false;
-        controls.target.set(6, 4, 0);
+        controls.target.set(cx, cy, 0);
         controls.mouseButtons = { LEFT: null, MIDDLE: null, RIGHT: THREE.MOUSE.PAN };
         controls.update();
       }
