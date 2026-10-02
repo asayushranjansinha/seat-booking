@@ -6,6 +6,7 @@
 # that constraint and all sixteen succeed, booking the seat sixteen times over.
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source tools/lib/db.sh
 
 API=http://localhost:8080
 SEAT_CODE=${1:-C3}
@@ -19,7 +20,7 @@ token() {
 TOKEN=$(token)
 if [ -z "$TOKEN" ]; then echo "Could not sign in. Is the API running on :8080?"; exit 1; fi
 
-SEAT=$(docker exec seatbooking-postgres psql -U seatbooking -d seatbooking -tAc \
+SEAT=$("${PSQL[@]}" -tAc \
   "SELECT s.id FROM seat s JOIN floor_plan_version v ON v.id = s.plan_version_id
    WHERE v.status='PUBLISHED' AND s.code='$SEAT_CODE' LIMIT 1" | tr -d '[:space:]')
 if [ -z "$SEAT" ]; then echo "No published seat called $SEAT_CODE"; exit 1; fi
@@ -35,7 +36,7 @@ t = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) + time
 print(t.isoformat().replace('+00:00','Z'))")
 
 # Clear the slot so the demo starts from a free seat.
-docker exec seatbooking-postgres psql -U seatbooking -d seatbooking -q \
+"${PSQL[@]}" -q \
   -c "DELETE FROM booking WHERE seat_id = '$SEAT'" >/dev/null
 
 echo "Firing 16 simultaneous requests at seat $SEAT_CODE for $START"
@@ -60,7 +61,7 @@ echo "  accepted (201): $CREATED"
 echo "  refused  (409): $CONFLICT"
 echo "  anything else : $OTHER"
 echo
-LIVE=$(docker exec seatbooking-postgres psql -U seatbooking -d seatbooking -tAc \
+LIVE=$("${PSQL[@]}" -tAc \
   "SELECT count(*) FROM booking WHERE seat_id='$SEAT' AND status<>'CANCELLED'" | tr -d '[:space:]')
 echo "  bookings now held on that seat: $LIVE"
 

@@ -5,6 +5,7 @@
 # Never demo from a draft you have been poking at. Run this first.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+source tools/lib/db.sh
 
 echo "Stopping the API..."
 lsof -ti:8080 | xargs -r kill -9 2>/dev/null || true
@@ -13,7 +14,7 @@ sleep 1
 echo "Wiping the database..."
 # client_min_messages=warning drops the "drop cascades to..." notices, which are a wall
 # of text in front of a client and say nothing useful.
-docker exec seatbooking-postgres psql -U seatbooking -d seatbooking -q \
+"${PSQL[@]}" -q \
   -v ON_ERROR_STOP=1 \
   -c "SET client_min_messages TO warning; DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO seatbooking;" >/dev/null 2>&1
 
