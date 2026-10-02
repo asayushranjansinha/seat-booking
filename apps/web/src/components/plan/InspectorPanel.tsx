@@ -1,6 +1,6 @@
 'use client';
 
-import { Armchair, Info, LayoutGrid, Pin, PinOff, Table2, Trash2 } from 'lucide-react';
+import { Armchair, Info, LayoutGrid, Loader2, PencilRuler, Pin, PinOff, Table2, Trash2 } from 'lucide-react';
 import type { PlacementJson, ShapeJson } from '@/api/types';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,11 +23,21 @@ const num = (v: string, fallback: number) => {
  * change a seat count read past a name, two dimensions and a rotation first. Each
  * selection now gets only its own controls, under a heading that says what is selected.
  */
-export function InspectorPanel() {
+export function InspectorPanel({
+  noLayout, canStart, onStart, starting,
+}: {
+  noLayout: boolean;
+  canStart: boolean;
+  onStart: () => void;
+  starting: boolean;
+}) {
   const scene = useEditorStore((s) => s.scene);
   const selection = useEditorStore((s) => s.selection);
   const canEdit = scene?.status === 'DRAFT';
 
+  // A floor with nothing on it is a normal state, not an error. Rendering nothing here
+  // leaves an admin staring at an empty grid with no way to begin.
+  if (!scene && noLayout) return <EmptyFloor canStart={canStart} onStart={onStart} starting={starting} />;
   if (!scene) return null;
   if (!selection) return <Overview />;
   if (selection.type === 'room') return <RoomInspector canEdit={canEdit} />;
@@ -84,6 +94,52 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
       <span className="text-muted-foreground">{label}</span>
       <span className="tabular font-medium">{value}</span>
     </div>
+  );
+}
+
+function EmptyFloor({
+  canStart, onStart, starting,
+}: {
+  canStart: boolean;
+  onStart: () => void;
+  starting: boolean;
+}) {
+  return (
+    <Shell icon={<PencilRuler className="size-4" />} title="Empty floor" subtitle="Nothing drawn yet">
+      <p className="text-sm leading-relaxed text-muted-foreground">
+        {canStart
+          ? 'Start a draft, then draw the rooms. Nothing is visible to anyone else until you publish.'
+          : 'Nobody has drawn this floor yet. An admin needs to create the layout first.'}
+      </p>
+
+      {canStart && (
+        <>
+          <Button className="w-full" onClick={onStart} disabled={starting}>
+            {starting && <Loader2 className="size-4 animate-spin" />}
+            Start drawing
+          </Button>
+
+          <Separator />
+
+          <ol className="space-y-2.5 text-sm text-muted-foreground">
+            {[
+              'Draw a room with the square, circle or pen tool',
+              'Drop a table inside it — seats appear automatically',
+              'Adjust the seat rule and count in this panel',
+              'Add doors and partitions if you need them',
+              'Publish, and the floor becomes bookable',
+            ].map((step, i) => (
+              <li key={step} className="flex gap-2.5">
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">
+                  {i + 1}
+                </span>
+                <span className="leading-snug">{step}</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </Shell>
   );
 }
 

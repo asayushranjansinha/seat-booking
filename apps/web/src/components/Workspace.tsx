@@ -32,6 +32,9 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
   const [floorId, setFloorId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [affected, setAffected] = useState<AffectedBookingJson[]>([]);
+  // A brand-new floor has no published version and no draft. Without tracking that,
+  // the editor renders nothing at all and offers no way to start.
+  const [noLayout, setNoLayout] = useState(false);
 
   const isAdmin = session.user.role === 'ADMIN';
   const canEdit = mode === 'PLAN' && scene?.status === 'DRAFT' && isAdmin;
@@ -58,8 +61,14 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
       ? api.scene(floor.draftVersionId)
       : api.publishedScene(floorId);
     load
-      .then(({ scene: s, etag: e }) => loadScene(s, e))
-      .catch(() => toast.info('This floor has no published layout yet.'));
+      .then(({ scene: s, etag: e }) => {
+        loadScene(s, e);
+        setNoLayout(false);
+      })
+      .catch(() => {
+        useEditorStore.setState({ scene: null, etag: null });
+        setNoLayout(true);
+      });
   }, [floorId, buildings, loadScene, mode]);
 
   const refreshBuildings = useCallback(async () => setBuildings(await api.buildings()), []);
@@ -142,6 +151,7 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
     try {
       const draft = await api.createDraft(floorId);
       loadScene(draft, String(draft.revision));
+      setNoLayout(false);
       await refreshBuildings();
       toast.success('Editable draft created', { description: 'Changes stay private until you publish.' });
     } catch {
@@ -195,6 +205,8 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
               onCreateDraft={createDraft}
               busy={busy}
               canEdit={!!canEdit}
+              noLayout={noLayout}
+              canStart={isAdmin}
             />
           )}
 
@@ -208,7 +220,12 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
 
         <aside className="flex w-[320px] shrink-0 flex-col border-l bg-sidebar">
           {mode === 'PLAN' ? (
-            <InspectorPanel />
+            <InspectorPanel
+              noLayout={noLayout}
+              canStart={isAdmin}
+              onStart={createDraft}
+              starting={busy === 'drafting'}
+            />
           ) : (
             <BookPanel
               floorId={floorId}

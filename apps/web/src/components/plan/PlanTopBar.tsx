@@ -21,12 +21,16 @@ export function PlanTopBar({
   onCreateDraft,
   busy,
   canEdit,
+  noLayout,
+  canStart,
 }: {
   onValidate: () => void;
   onPublish: () => void;
   onCreateDraft: () => void;
   busy: string | null;
   canEdit: boolean;
+  noLayout: boolean;
+  canStart: boolean;
 }) {
   const scene = useEditorStore((s) => s.scene);
   const dirty = useEditorStore((s) => s.dirty);
@@ -47,6 +51,8 @@ export function PlanTopBar({
           {scene.status === 'DRAFT' ? 'Draft' : 'Published'} · rev {scene.revision}
         </Badge>
       )}
+
+      {noLayout && <span className="text-sm text-muted-foreground">This floor is empty</span>}
 
       {canEdit && (
         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -105,9 +111,11 @@ export function PlanTopBar({
           {view === '2D' ? <Box className="size-4" /> : <Square className="size-4" />}
         </IconButton>
 
-        {!canEdit && scene && (
-          <Button size="sm" variant="outline" className="ml-2" onClick={onCreateDraft} disabled={busy !== null}>
-            Edit layout
+        {!canEdit && (scene || noLayout) && canStart && (
+          <Button size="sm" variant={noLayout ? 'default' : 'outline'} className="ml-2"
+            onClick={onCreateDraft} disabled={busy !== null}>
+            {busy === 'drafting' && <Loader2 className="size-3.5 animate-spin" />}
+            {noLayout ? 'Start drawing' : 'Edit layout'}
           </Button>
         )}
 

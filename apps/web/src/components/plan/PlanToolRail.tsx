@@ -41,6 +41,9 @@ const GROUPS: ToolSpec[][] = [
 ];
 
 export function PlanToolRail({ disabled }: { disabled: boolean }) {
+  // `disabled` is true on a published layout and on an empty floor: in both cases there
+  // is nothing a tool could draw into, and an enabled-looking tool that does nothing when
+  // clicked is worse than one that is plainly unavailable.
   const tool = useEditorStore((s) => s.tool);
   const setTool = useEditorStore((s) => s.setTool);
   const cancelDrawing = useEditorStore((s) => s.cancelDrawing);
