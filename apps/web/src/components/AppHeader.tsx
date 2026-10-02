@@ -1,12 +1,13 @@
 'use client';
 
-import { Building2, LogOut } from 'lucide-react';
+import { Building2, LogOut, Settings2 } from 'lucide-react';
 import type { BuildingJson, SessionJson } from '@/api/types';
 import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useEditorStore } from '@/state/editorStore';
 
@@ -22,16 +23,19 @@ export function AppHeader({
   floorId,
   onFloorChange,
   onSignOut,
+  onManageEstate,
 }: {
   session: SessionJson;
   buildings: BuildingJson[];
   floorId: string | null;
   onFloorChange: (id: string) => void;
   onSignOut: () => void;
+  onManageEstate: () => void;
 }) {
   const mode = useEditorStore((s) => s.mode);
   const setMode = useEditorStore((s) => s.setMode);
   const isAdmin = session.user.role === 'ADMIN';
+  const hasAnyFloor = buildings.some((b) => b.floors.length > 0);
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b bg-sidebar px-4">
@@ -42,23 +46,48 @@ export function AppHeader({
 
       <Separator orientation="vertical" className="h-6" />
 
-      <Select value={floorId ?? undefined} onValueChange={onFloorChange}>
-        <SelectTrigger className="w-[230px]" aria-label="Floor">
-          <SelectValue placeholder="Choose a floor" />
-        </SelectTrigger>
-        <SelectContent>
-          {buildings.map((building) => (
-            <SelectGroup key={building.id}>
-              <SelectLabel>{building.name}</SelectLabel>
-              {building.floors.map((floor) => (
-                <SelectItem key={floor.id} value={floor.id}>
-                  {floor.name}
-                </SelectItem>
+      {/* With no buildings at all there is nothing to choose between, so the control
+          becomes the thing that fixes that rather than an empty dropdown. */}
+      {hasAnyFloor ? (
+        <Select value={floorId ?? undefined} onValueChange={onFloorChange}>
+          <SelectTrigger className="w-[230px]" aria-label="Floor">
+            <SelectValue placeholder="Choose a floor" />
+          </SelectTrigger>
+          <SelectContent>
+            {buildings
+              .filter((b) => b.floors.length > 0)
+              .map((building) => (
+                <SelectGroup key={building.id}>
+                  <SelectLabel>{building.name}</SelectLabel>
+                  {building.floors.map((floor) => (
+                    <SelectItem key={floor.id} value={floor.id}>
+                      {floor.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               ))}
-            </SelectGroup>
-          ))}
-        </SelectContent>
-      </Select>
+          </SelectContent>
+        </Select>
+      ) : (
+        isAdmin && (
+          <Button variant="outline" size="sm" onClick={onManageEstate}>
+            <Building2 className="size-4" />
+            Add a building
+          </Button>
+        )
+      )}
+
+      {isAdmin && hasAnyFloor && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="Buildings and floors"
+              onClick={onManageEstate}>
+              <Settings2 className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Buildings and floors</TooltipContent>
+        </Tooltip>
+      )}
 
       <ToggleGroup
         type="single"

@@ -1,5 +1,7 @@
 import type {
   BookingJson,
+  BuildingSummaryJson,
+  FloorSummaryJson,
   InviteViewJson,
   MeetingJson,
   BuildingJson,
@@ -283,6 +285,57 @@ export const api = {
       { method: 'POST' },
     );
     return data;
+  },
+
+  // --- buildings and floors (admin) ---
+
+  async estate(): Promise<BuildingSummaryJson[]> {
+    const { data } = await request<BuildingSummaryJson[]>('/api/estate');
+    return data;
+  },
+
+  async createBuilding(name: string, address: string): Promise<BuildingSummaryJson> {
+    const { data } = await request<BuildingSummaryJson>('/api/estate/buildings', {
+      method: 'POST',
+      body: { name, address },
+    });
+    return data;
+  },
+
+  async updateBuilding(id: string, name: string, address: string): Promise<BuildingSummaryJson> {
+    const { data } = await request<BuildingSummaryJson>(`/api/estate/buildings/${id}`, {
+      method: 'PATCH',
+      body: { name, address },
+    });
+    return data;
+  },
+
+  async deleteBuilding(id: string): Promise<void> {
+    await request<null>(`/api/estate/buildings/${id}`, { method: 'DELETE' });
+  },
+
+  async createFloor(buildingId: string, name: string, level: number): Promise<FloorSummaryJson> {
+    const { data } = await request<FloorSummaryJson>(`/api/estate/buildings/${buildingId}/floors`, {
+      method: 'POST',
+      body: { name, level },
+    });
+    return data;
+  },
+
+  async updateFloor(id: string, name: string, level: number): Promise<FloorSummaryJson> {
+    const { data } = await request<FloorSummaryJson>(`/api/estate/floors/${id}`, {
+      method: 'PATCH',
+      body: { name, level },
+    });
+    return data;
+  },
+
+  async deleteFloor(id: string): Promise<void> {
+    await request<null>(`/api/estate/floors/${id}`, { method: 'DELETE' });
+  },
+
+  async discardDraft(floorId: string): Promise<void> {
+    await request<null>(`/api/estate/floors/${floorId}/draft`, { method: 'DELETE' });
   },
 
   async publish(planVersionId: string): Promise<PublishResultJson> {

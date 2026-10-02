@@ -379,7 +379,19 @@ export function EditorCanvas() {
     const rebuild = () => {
       const { scene: s, selection, violations, view, drawing, cursor, mode, occupancy } =
         useEditorStore.getState();
-      if (!s) return;
+
+      // No scene means an empty floor, which is a state to DRAW rather than to skip.
+      // Returning early here leaves the previous floor's rooms on screen, so switching
+      // to a brand-new floor shows someone else's layout under an "empty floor" panel.
+      if (!s) {
+        if (graph) {
+          scene.remove(graph);
+          disposeGraph(graph);
+          graph = null;
+        }
+        lastKey = 'empty';
+        return;
+      }
       const key = [
         s.planVersionId,
         s.revision,

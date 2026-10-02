@@ -7,6 +7,7 @@ import type { AffectedBookingJson, BuildingJson, SessionJson } from '@/api/types
 import { EditorCanvas } from '@/canvas/EditorCanvas';
 import { AppHeader } from '@/components/AppHeader';
 import { BookPanel } from '@/components/book/BookPanel';
+import { EstateDialog } from '@/components/EstateDialog';
 import { InspectorPanel } from '@/components/plan/InspectorPanel';
 import { IssuesBar } from '@/components/plan/IssuesBar';
 import { PlanToolRail } from '@/components/plan/PlanToolRail';
@@ -44,6 +45,7 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
   // A brand-new floor has no published version and no draft. Without tracking that,
   // the editor renders nothing at all and offers no way to start.
   const [noLayout, setNoLayout] = useState(false);
+  const [estateOpen, setEstateOpen] = useState(false);
 
   const isAdmin = session.user.role === 'ADMIN';
   const canEdit = mode === 'PLAN' && scene?.status === 'DRAFT' && isAdmin;
@@ -62,6 +64,23 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
       })
       .catch((e) => toast.error('Could not load buildings', { description: describe(e) }));
   }, []);
+
+  // A floor can disappear underneath us when it is deleted from the estate dialog, and
+  // an organisation with no floors at all is the state a new customer starts in.
+  useEffect(() => {
+    const stillThere = buildings.some((b) => b.floors.some((f) => f.id === floorId));
+    if (floorId && !stillThere) {
+      setFloorId(buildings.flatMap((b) => b.floors)[0]?.id ?? null);
+    }
+    if (!floorId && buildings.length > 0) {
+      const first = buildings.flatMap((b) => b.floors)[0];
+      if (first) setFloorId(first.id);
+    }
+    if (buildings.length > 0 && buildings.every((b) => b.floors.length === 0)) {
+      useEditorStore.setState({ scene: null, etag: null });
+      setNoLayout(true);
+    }
+  }, [buildings, floorId]);
 
   useEffect(() => {
     if (!floorId) return;
@@ -210,6 +229,17 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
         floorId={floorId}
         onFloorChange={setFloorId}
         onSignOut={onSignOut}
+        onManageEstate={() => setEstateOpen(true)}
+      />
+
+      <EstateDialog
+        open={estateOpen}
+        onOpenChange={setEstateOpen}
+        currentFloorId={floorId}
+        onChanged={(selectFloorId) => {
+          void refreshBuildings();
+          if (selectFloorId) setFloorId(selectFloorId);
+        }}
       />
 
       <div className="flex min-h-0 flex-1">

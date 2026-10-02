@@ -105,6 +105,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/plan-versions/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/plan-versions/**").hasRole("ADMIN")
                         .requestMatchers("/api/floors/*/draft").hasRole("ADMIN")
+                        // Creating and deleting buildings and floors is an admin act:
+                        // a floor carries every layout and every booking made on it.
+                        .requestMatchers("/api/estate/**").hasRole("ADMIN")
                         // Booking is for everyone; only editing a layout is an admin act.
                         .requestMatchers("/api/bookings/**").authenticated()
                         // The SSE stream is open because EventSource cannot send an

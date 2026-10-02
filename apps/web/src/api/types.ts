@@ -203,3 +203,24 @@ export interface InviteViewJson {
   yourEmail: string;
   status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
 }
+
+// --------------------------------------------------------------- estate (buildings)
+
+export interface FloorSummaryJson {
+  id: string;
+  name: string;
+  level: number;
+  publishedVersionId: string | null;
+  draftVersionId: string | null;
+  rooms: number;
+  seats: number;
+  liveBookings: number;
+  publishedAt: string | null;
+}
+
+export interface BuildingSummaryJson {
+  id: string;
+  name: string;
+  address: string | null;
+  floors: FloorSummaryJson[];
+}

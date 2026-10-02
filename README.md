@@ -89,6 +89,10 @@ the validation overlay; the 2D/3D toggle; and the draft/publish flow.
 coloured for the window being viewed, booking and cancellation, cost from the modelled
 rates, and live updates over SSE when someone else takes a seat.
 
+**Buildings and floors** are managed from the header (admin only). A floor is where a
+layout is drawn, so deleting one is refused while any of its seats still holds a live
+booking — it names who holds them rather than failing on a foreign key.
+
 **Meetings** let a manager hold a whole table and invite people by email. The meeting,
 every seat's booking, the invites and the queued emails are one transaction: if a single
 seat is taken the lot rolls back, because a half-held table is not what was asked for.
