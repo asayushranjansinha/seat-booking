@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { useEditorStore } from '@/state/editorStore';
+import { useEditorStore, useSingleSelection } from '@/state/editorStore';
 import { SeatLegend } from './SeatLegend';
 import { TimeWindow } from './TimeWindow';
 
@@ -35,7 +35,7 @@ const when = (iso: string) =>
  */
 export function BookPanel({ floorId, canManage }: { floorId: string | null; canManage: boolean }) {
   const scene = useEditorStore((s) => s.scene);
-  const selection = useEditorStore((s) => s.selection);
+  const selection = useSingleSelection();
   const occupancy = useEditorStore((s) => s.occupancy);
   const setOccupancy = useEditorStore((s) => s.setOccupancy);
   const window_ = useEditorStore((s) => s.window);

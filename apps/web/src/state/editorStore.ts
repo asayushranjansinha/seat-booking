@@ -25,11 +25,23 @@ import type {
   ViolationJson,
 } from '@/api/types';
 
-export type Selection =
+/** One thing on the canvas. */
+export type SelectionItem =
   | { type: 'room'; id: string }
   | { type: 'furniture'; id: string }
-  | { type: 'seat'; id: string }
-  | null;
+  | { type: 'seat'; id: string };
+
+/**
+ * One thing, or nothing.
+ *
+ * <p>Still used wherever exactly one entity is meant — a resize grip belongs to a single
+ * shape, and so does every field in the inspector. The SELECTION is a list; this is an
+ * element of it.
+ */
+export type Selection = SelectionItem | null;
+
+/** Stable key for membership tests, since selection items are compared by value. */
+export const selectionKey = (item: SelectionItem) => `${item.type}:${item.id}`;
 
 export type Tool =
   | 'SELECT'
@@ -59,7 +71,15 @@ interface UndoableState {
 
 interface EditorState extends UndoableState {
   etag: string | null;
-  selection: Selection;
+  /**
+   * Everything selected, in the order it was added.
+   *
+   * <p>A list rather than one item because a floor is built by duplicating groups: two
+   * tables and the gap between them is the unit people actually copy. Operations that
+   * only make sense for one thing — the resize grips, the inspector's fields — ask for
+   * the single element and do nothing when there are several.
+   */
+  selection: SelectionItem[];
   tool: Tool;
   violations: ViolationJson[];
   view: '2D' | '3D';
@@ -92,7 +112,17 @@ interface EditorState extends UndoableState {
 
   loadScene: (scene: SceneJson, etag: string | null) => void;
   markSaved: (scene: SceneJson, etag: string | null) => void;
-  setSelection: (selection: Selection) => void;
+  setSelection: (selection: SelectionItem[]) => void;
+  /** Add to the selection, or remove it if it is already there. Shift-click. */
+  toggleSelection: (item: SelectionItem) => void;
+  /**
+   * Shift everything selected by the same amount, in world metres.
+   *
+   * <p>Separate from moveEntity because a group has to keep its shape: each member moves
+   * by the same delta in ITS OWN parent's frame, which is not the same as moving each one
+   * to a snapped absolute position.
+   */
+  moveSelectionBy: (dx: number, dy: number) => void;
   setTool: (tool: Tool) => void;
   setEditable: (editable: boolean) => void;
   setView: (view: '2D' | '3D') => void;
@@ -174,6 +204,13 @@ const SAME_CORNER = 0.08;
  * clipboard has ever behaved.
  */
 let clipboard: Clip | null = null;
+
+/** Turn a world delta into a frame rotated by `angle`. */
+function rotateDelta(dx: number, dy: number, angle: number): { x: number; y: number } {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+}
 
 /** Whether the current drag gesture has already contributed its one history entry. */
 let dragHistoryRecorded = false;
@@ -317,7 +354,7 @@ export const useEditorStore = create<EditorState>()(
     (set, get) => ({
       scene: null,
       etag: null,
-      selection: null,
+      selection: [],
       tool: 'SELECT',
       editable: false,
       violations: [],
@@ -334,7 +371,7 @@ export const useEditorStore = create<EditorState>()(
       window: defaultWindow(),
 
       loadScene: (scene, etag) => {
-        set({ scene, etag, dirty: false, selection: null, violations: [], drawing: null });
+        set({ scene, etag, dirty: false, selection: [], violations: [], drawing: null });
         // Opening a layout is not an edit. Without this the load itself sits in the
         // history as a step from `scene: null`, and undoing far enough unloads the
         // document: the canvas empties and the toolbar reports "no layout".
@@ -342,6 +379,18 @@ export const useEditorStore = create<EditorState>()(
       },
       markSaved: (scene, etag) => set({ scene, etag, dirty: false }),
       setSelection: (selection) => set({ selection }),
+
+      toggleSelection: (item) =>
+        set((state) => {
+          const key = selectionKey(item);
+          const without = state.selection.filter((s) => selectionKey(s) !== key);
+          return {
+            ...state,
+            selection: without.length === state.selection.length
+              ? [...state.selection, item]
+              : without,
+          };
+        }),
       setTool: (tool) => set({ tool }),
       setEditable: (editable) => set({ editable }),
       setView: (view) => set({ view }),
@@ -377,6 +426,51 @@ export const useEditorStore = create<EditorState>()(
             }));
             if (seat?.tableId) scene = regenerate(scene, seat.tableId);
           }
+          return { ...state, scene, dirty: true };
+        }),
+
+      moveSelectionBy: (dx, dy) =>
+        set((state) => {
+          if (!state.scene) return state;
+          let scene = state.scene;
+          const regenerateFor = new Set<string>();
+
+          for (const item of state.selection) {
+            if (item.type === 'room') {
+              scene = updateRoom(scene, item.id, (r) => ({
+                ...r, transform: { ...r.transform, x: r.transform.x + dx, y: r.transform.y + dy },
+              }));
+            } else if (item.type === 'furniture') {
+              // A table's position is in its ROOM's frame. A room can be rotated, so a
+              // world delta has to be turned into that frame or a group dragged inside a
+              // rotated room would shear instead of moving.
+              const table = scene.furniture.find((f) => f.id === item.id);
+              const room = scene.rooms.find((r) => r.id === table?.roomId);
+              const local = room ? rotateDelta(dx, dy, -room.transform.rot) : { x: dx, y: dy };
+              scene = updateFurniture(scene, item.id, (f) => ({
+                ...f, transform: { ...f.transform, x: f.transform.x + local.x, y: f.transform.y + local.y },
+              }));
+            } else {
+              const seat = scene.seats.find((s) => s.id === item.id);
+              if (!seat) continue;
+              const table = scene.furniture.find((f) => f.id === seat.tableId);
+              const room = scene.rooms.find((r) => r.id === seat.roomId);
+              const rot = (room?.transform.rot ?? 0) + (table?.transform.rot ?? 0);
+              const local = rotateDelta(dx, dy, -rot);
+              scene = updateSeat(scene, item.id, (sx) => ({
+                ...sx,
+                override: true,
+                localTransform: {
+                  ...sx.localTransform,
+                  x: sx.localTransform.x + local.x,
+                  y: sx.localTransform.y + local.y,
+                },
+              }));
+              if (seat.tableId) regenerateFor.add(seat.tableId);
+            }
+          }
+
+          for (const tableId of regenerateFor) scene = regenerate(scene, tableId);
           return { ...state, scene, dirty: true };
         }),
 
@@ -519,42 +613,39 @@ export const useEditorStore = create<EditorState>()(
       deleteSelected: () =>
         set((state) => {
           const { scene, selection } = state;
-          if (!scene || !selection) return state;
-          if (selection.type === 'room') {
-            return {
-              ...state,
-              scene: {
-                ...scene,
-                rooms: scene.rooms.filter((r) => r.id !== selection.id),
-                furniture: scene.furniture.filter((f) => f.roomId !== selection.id),
-                seats: scene.seats.filter((s) => s.roomId !== selection.id),
-              },
-              selection: null,
-              dirty: true,
-            };
-          }
-          if (selection.type === 'furniture') {
-            return {
-              ...state,
-              scene: {
-                ...scene,
-                furniture: scene.furniture.filter((f) => f.id !== selection.id),
-                seats: scene.seats.filter((s) => s.tableId !== selection.id),
-              },
-              selection: null,
-              dirty: true,
-            };
-          }
-          return {
-            ...state,
-            scene: { ...scene, seats: scene.seats.filter((s) => s.id !== selection.id) },
-            selection: null,
-            dirty: true,
+          if (!scene || selection.length === 0) return state;
+
+          const rooms = new Set(selection.filter((x) => x.type === 'room').map((x) => x.id));
+          const tables = new Set(selection.filter((x) => x.type === 'furniture').map((x) => x.id));
+          const seats = new Set(selection.filter((x) => x.type === 'seat').map((x) => x.id));
+
+          // Deleting a room takes its tables and their seats with it, and deleting a
+          // table takes its seats. Selecting a room AND one of its tables is therefore
+          // not a conflict: the room wins and the table goes anyway.
+          const next: SceneJson = {
+            ...scene,
+            rooms: scene.rooms.filter((r) => !rooms.has(r.id)),
+            furniture: scene.furniture.filter((f) => !rooms.has(f.roomId) && !tables.has(f.id)),
+            seats: scene.seats.filter((x) =>
+              !rooms.has(x.roomId)
+              && !(x.tableId !== null && tables.has(x.tableId))
+              && !seats.has(x.id)),
           };
+
+          // A seat deleted on its own leaves a gap its table's rule can close.
+          let scene2 = next;
+          const regenerateFor = new Set(
+            scene.seats
+              .filter((x) => seats.has(x.id) && x.tableId && !tables.has(x.tableId))
+              .map((x) => x.tableId!),
+          );
+          for (const tableId of regenerateFor) scene2 = regenerate(scene2, tableId);
+
+          return { ...state, scene: scene2, selection: [], dirty: true };
         }),
 
       setCursor: (cursor) => set({ cursor }),
-      setMode: (mode) => set({ mode, selection: null, tool: 'SELECT', drawing: null }),
+      setMode: (mode) => set({ mode, selection: [], tool: 'SELECT', drawing: null }),
       setOccupancy: (occupancy) => set({ occupancy }),
       setWindow: (window) => set({ window }),
 
@@ -606,7 +697,7 @@ export const useEditorStore = create<EditorState>()(
             scene: { ...state.scene, rooms: [...state.scene.rooms, room] },
             drawing: null,
             tool: 'SELECT',
-            selection: { type: 'room', id: room.id },
+            selection: [{ type: 'room', id: room.id }],
             dirty: true,
           };
         }),
@@ -667,7 +758,7 @@ export const useEditorStore = create<EditorState>()(
           return {
             ...state,
             scene: { ...state.scene, rooms: [...state.scene.rooms, room] },
-            selection: { type: 'room', id: room.id },
+            selection: [{ type: 'room', id: room.id }],
             tool: 'SELECT',
             dirty: true,
           };
@@ -723,7 +814,7 @@ export const useEditorStore = create<EditorState>()(
               furniture: [...state.scene.furniture, table],
               seats: [...state.scene.seats, ...seats],
             },
-            selection: { type: 'furniture', id: tableId },
+            selection: [{ type: 'furniture', id: tableId }],
             tool: 'SELECT',
             dirty: true,
           };
@@ -754,3 +845,15 @@ export const useEditorStore = create<EditorState>()(
 );
 
 export const useTemporalStore = () => useEditorStore.temporal.getState();
+
+/**
+ * The one selected thing, when exactly one thing is selected.
+ *
+ * <p>Most of the inspector edits a single entity and has no meaning for a group: there is
+ * no one width to type when two tables are selected. Those panels ask for this and fall
+ * back to the group summary when it is null.
+ */
+export function useSingleSelection(): Selection {
+  const selection = useEditorStore((s) => s.selection);
+  return selection.length === 1 ? selection[0]! : null;
+}

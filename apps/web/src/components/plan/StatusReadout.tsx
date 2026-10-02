@@ -1,6 +1,6 @@
 'use client';
 
-import { useEditorStore } from '@/state/editorStore';
+import { useEditorStore, useSingleSelection } from '@/state/editorStore';
 
 const m = (n: number) => `${n.toFixed(2)} m`;
 
@@ -12,7 +12,8 @@ const m = (n: number) => `${n.toFixed(2)} m`;
  */
 export function StatusReadout() {
   const scene = useEditorStore((s) => s.scene);
-  const selection = useEditorStore((s) => s.selection);
+  const selection = useSingleSelection();
+  const selectedCount = useEditorStore((s) => s.selection.length);
   const drawing = useEditorStore((s) => s.drawing);
   const cursor = useEditorStore((s) => s.cursor);
   const snapEnabled = useEditorStore((s) => s.snapEnabled);
@@ -36,6 +37,8 @@ export function StatusReadout() {
   } else if (selection?.type === 'furniture') {
     const table = scene.furniture.find((f) => f.id === selection.id);
     if (table) rows.push(...shapeRows(table.shape));
+  } else if (selectedCount > 1) {
+    rows.push(['Selected', `${selectedCount} things`]);
   }
 
   if (rows.length === 0) return null;

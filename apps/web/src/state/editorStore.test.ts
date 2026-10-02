@@ -136,7 +136,7 @@ describe('editor history', () => {
 
   it('selecting something is not an undo step', () => {
     const before = temporal().pastStates.length;
-    store().setSelection({ type: 'furniture', id: TABLE_ID });
+    store().setSelection([{ type: 'furniture', id: TABLE_ID }]);
     store().setView('3D');
     store().setTool('ROOM_RECT');
     expect(temporal().pastStates.length).toBe(before);

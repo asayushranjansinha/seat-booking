@@ -1,9 +1,13 @@
 /**
  * Copy and paste for the editor.
  *
- * <p>A floor is repetitive by nature: the same bench, the same meeting table, laid out
- * again on the other side of a partition. Drawing each one and re-tuning its seat rule is
- * the slow way to produce something that was always meant to be identical.
+ * <p>A floor is repetitive by nature: the same pair of benches, the same meeting table,
+ * laid out again on the other side of a partition. Drawing each one and re-tuning its
+ * seat rule is the slow way to produce something that was always meant to be identical.
+ *
+ * <p>A copy is a GROUP, because the unit people actually duplicate is "these two tables
+ * and the gap between them". Everything moves by one offset, so what comes out is
+ * arranged exactly like what went in.
  *
  * <p>Paste goes WHERE THE POINTER IS, into whichever room is under it, because that is
  * the only answer that needs no further dragging — and pasting into a different partition
@@ -11,7 +15,7 @@
  * a table still belongs to the room, so moving one between zones is only a position.
  *
  * <p>With the pointer off the canvas there is nowhere obvious to aim, so the copy lands
- * back in its own room, nudged, in the way every drawing program has done for decades.
+ * beside its original, in the way every drawing program has done for decades.
  */
 import { applyTransform, invertTransform } from '@seat-booking/geometry';
 import { roomAt } from '@/canvas/snapping';
@@ -20,47 +24,72 @@ import type {
 } from '@/api/types';
 // Type-only, so it is erased at compile time and the store importing this module back
 // does not create a cycle at runtime.
-import type { Selection } from '@/state/editorStore';
+import type { SelectionItem } from '@/state/editorStore';
 
 /** How far a paste with no pointer to aim at is nudged, in metres. */
 const NUDGE = 0.5;
 
 const uuid = () => crypto.randomUUID();
 
-export type Clip =
-  | { kind: 'furniture'; table: FurnitureJson; seats: SeatJson[] }
-  | { kind: 'room'; room: RoomJson; furniture: FurnitureJson[]; seats: SeatJson[] };
+/**
+ * What was copied.
+ *
+ * <p>{@code anchor} is the centre of what was taken, in world metres. Paste moves the
+ * whole group by (target - anchor), which is what keeps two tables two tables apart
+ * rather than stacking them both on the pointer.
+ */
+export interface Clip {
+  rooms: RoomJson[];
+  /** Every copied table: those selected outright, and those inside a copied room. */
+  tables: FurnitureJson[];
+  seats: SeatJson[];
+  anchor: { x: number; y: number };
+}
 
-/** What the clipboard would take right now, or nothing if the selection cannot be copied. */
-export function extract(scene: SceneJson, selection: Selection): Clip | null {
-  if (!selection) return null;
+/** Where a table sits on the floor, with its room's own placement taken into account. */
+function worldOf(scene: SceneJson, table: FurnitureJson): { x: number; y: number } {
+  const room = scene.rooms.find((r) => r.id === table.roomId);
+  return room ? applyTransform(room.transform, table.transform) : table.transform;
+}
 
-  if (selection.type === 'furniture') {
-    const table = scene.furniture.find((f) => f.id === selection.id);
-    if (!table) return null;
-    return {
-      kind: 'furniture',
-      table,
-      seats: scene.seats.filter((s) => s.tableId === table.id),
-    };
-  }
+/** What the clipboard would take right now, or nothing if none of it can be copied. */
+export function extract(scene: SceneJson, selection: readonly SelectionItem[]): Clip | null {
+  const wanted = (type: string, id: string) =>
+    selection.some((x) => x.type === type && x.id === id);
 
-  if (selection.type === 'room') {
-    const room = scene.rooms.find((r) => r.id === selection.id);
-    if (!room) return null;
-    const furniture = scene.furniture.filter((f) => f.roomId === room.id);
-    return {
-      kind: 'room',
-      room,
-      furniture,
-      seats: scene.seats.filter((s) => s.roomId === room.id),
-    };
-  }
+  const rooms = scene.rooms.filter((r) => wanted('room', r.id));
+  const roomIds = new Set(rooms.map((r) => r.id));
 
-  // A seat alone is not copyable. It exists at an index in a table's placement rule, and
-  // a loose duplicate of it would be a seat the rule does not know about and regeneration
-  // would immediately move or discard. Copy the table.
-  return null;
+  // A table inside a copied room travels WITH the room and keeps its place in it. One
+  // selected on its own is positioned against the pointer instead. Selecting both a room
+  // and a table inside it is therefore not a conflict — the room's copy covers it, and
+  // taking it twice would paste two tables on top of each other.
+  const inherited = scene.furniture.filter((f) => roomIds.has(f.roomId));
+  const standalone = scene.furniture.filter(
+    (f) => !roomIds.has(f.roomId) && wanted('furniture', f.id),
+  );
+  const tables = [...inherited, ...standalone];
+
+  if (rooms.length === 0 && standalone.length === 0) return null;
+
+  // Seats are deliberately not copyable alone: a seat exists at an index in its table's
+  // placement rule, and a loose duplicate is one the rule does not know about that the
+  // next regeneration would move or discard. They come with their table.
+  const tableIds = new Set(tables.map((f) => f.id));
+  const seats = scene.seats.filter((s) => s.tableId !== null && tableIds.has(s.tableId));
+
+  const points = [
+    ...rooms.map((r) => ({ x: r.transform.x, y: r.transform.y })),
+    ...standalone.map((f) => worldOf(scene, f)),
+  ];
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const anchor = {
+    x: (Math.min(...xs) + Math.max(...xs)) / 2,
+    y: (Math.min(...ys) + Math.max(...ys)) / 2,
+  };
+
+  return { rooms, tables, seats, anchor };
 }
 
 /**
@@ -68,7 +97,7 @@ export function extract(scene: SceneJson, selection: Selection): Clip | null {
  *
  * <p>Seat codes are unique per plan version — the database says so — and the original
  * rule, one letter per table by position, repeats itself at the 27th table. That was
- * survivable while tables were drawn one at a time. Duplicating a table is how a floor
+ * survivable while tables were drawn one at a time. Duplicating a group is how a floor
  * reaches 27 quickly, so the prefix is now chosen by what is actually unused, and runs on
  * into AA, AB after Z rather than wrapping back onto A.
  */
@@ -93,7 +122,7 @@ export function nextSeatPrefix(scene: SceneJson): string {
 
 /** A fresh copy of one table's seats, re-coded and re-parented. */
 function copySeats(
-  seats: readonly SeatJson[], roomId: string, tableId: string | null, prefix: string,
+  seats: readonly SeatJson[], roomId: string, tableId: string, prefix: string,
 ): SeatJson[] {
   return seats.map((seat) => ({
     ...seat,
@@ -101,90 +130,89 @@ function copySeats(
     roomId,
     tableId,
     code: `${prefix}${seat.seatIndex + 1}`,
-    // Bookings live on seats, and the copy has none. Carrying a rate across is right;
-    // carrying anything that implies history would not be.
-    hourlyRate: seat.hourlyRate,
   }));
 }
 
 export interface PasteResult {
   scene: SceneJson;
-  selection: NonNullable<Selection>;
+  selection: SelectionItem[];
 }
 
 /**
  * Put the clipboard down.
  *
- * <p>{@code at} is a point on the floor in world coordinates — where the pointer is —
- * or null when the pointer is not over the canvas.
+ * <p>{@code at} is a point on the floor in world metres — where the pointer is — or null
+ * when the pointer is not over the canvas.
  */
-export function paste(scene: SceneJson, clip: Clip, at: { x: number; y: number } | null): PasteResult | null {
-  if (clip.kind === 'room') {
+export function paste(
+  scene: SceneJson, clip: Clip, at: { x: number; y: number } | null,
+): PasteResult | null {
+  const dx = at ? at.x - clip.anchor.x : NUDGE;
+  const dy = at ? at.y - clip.anchor.y : -NUDGE;
+
+  let next = scene;
+  const selection: SelectionItem[] = [];
+  const newRoomOf = new Map<string, string>();
+
+  for (const source of clip.rooms) {
     const roomId = uuid();
-    const room: RoomJson = {
-      ...clip.room,
-      id: roomId,
-      name: `${clip.room.name} copy`,
-      transform: at
-        ? { ...clip.room.transform, x: at.x, y: at.y }
-        : { ...clip.room.transform, x: clip.room.transform.x + NUDGE, y: clip.room.transform.y - NUDGE },
-      // Derived server-side from the partitions; sending a stale copy back would describe
-      // zones that no longer match the outline.
-      subZones: undefined,
-      partitions: clip.room.partitions.map((p: PartitionJson) => ({ ...p, id: uuid() })),
-      gates: clip.room.gates.map((g: GateJson) => ({ ...g, id: uuid() })),
+    newRoomOf.set(source.id, roomId);
+    next = {
+      ...next,
+      rooms: [...next.rooms, {
+        ...source,
+        id: roomId,
+        name: `${source.name} copy`,
+        transform: { ...source.transform, x: source.transform.x + dx, y: source.transform.y + dy },
+        // Derived server-side from the partitions; sending a stale copy back would
+        // describe zones that no longer match the outline it came with.
+        subZones: undefined,
+        partitions: source.partitions.map((p: PartitionJson) => ({ ...p, id: uuid() })),
+        gates: source.gates.map((g: GateJson) => ({ ...g, id: uuid() })),
+      }],
     };
-
-    let furniture: FurnitureJson[] = [];
-    let seats: SeatJson[] = [];
-    for (const table of clip.furniture) {
-      const tableId = uuid();
-      furniture = [...furniture, { ...table, id: tableId, roomId }];
-      const prefix = nextSeatPrefix({ ...scene, seats: [...scene.seats, ...seats] });
-      seats = [
-        ...seats,
-        ...copySeats(clip.seats.filter((s) => s.tableId === table.id), roomId, tableId, prefix),
-      ];
-    }
-
-    return {
-      scene: {
-        ...scene,
-        rooms: [...scene.rooms, room],
-        furniture: [...scene.furniture, ...furniture],
-        seats: [...scene.seats, ...seats],
-      },
-      selection: { type: 'room', id: roomId },
-    };
+    selection.push({ type: 'room', id: roomId });
   }
 
-  // A table's position is stored in its ROOM's frame, so a world point has to be brought
-  // into that room before it means anything. Drop it in the room under the pointer, which
-  // is what makes pasting across a partition — or into a different room entirely — work
-  // without a separate command.
-  const target = at ? roomAt(scene, at) : null;
-  const room = target ?? scene.rooms.find((r) => r.id === clip.table.roomId);
-  if (!room) return null;
+  for (const source of clip.tables) {
+    const inheritedRoom = newRoomOf.get(source.roomId);
+    let roomId: string;
+    let local: { x: number; y: number };
 
-  const local = at && target
-    ? applyTransform(invertTransform(room.transform), at)
-    : { x: clip.table.transform.x + NUDGE, y: clip.table.transform.y - NUDGE };
+    if (inheritedRoom) {
+      // Carried by its room, which has already moved. Its place INSIDE the room is
+      // unchanged, which is the whole point of a room-local transform.
+      roomId = inheritedRoom;
+      local = { x: source.transform.x, y: source.transform.y };
+    } else {
+      const landed = { x: worldOf(scene, source).x + dx, y: worldOf(scene, source).y + dy };
+      const room = roomAt(next, landed) ?? next.rooms.find((r) => r.id === source.roomId);
+      if (!room) continue;
+      roomId = room.id;
+      local = applyTransform(invertTransform(room.transform), landed);
+    }
 
-  const tableId = uuid();
-  const table: FurnitureJson = {
-    ...clip.table,
-    id: tableId,
-    roomId: room.id,
-    label: clip.table.label ? `${clip.table.label} copy` : null,
-    transform: { ...clip.table.transform, x: local.x, y: local.y },
-  };
+    const tableId = uuid();
+    next = {
+      ...next,
+      furniture: [...next.furniture, {
+        ...source,
+        id: tableId,
+        roomId,
+        label: source.label && !inheritedRoom ? `${source.label} copy` : source.label,
+        transform: { ...source.transform, x: local.x, y: local.y },
+      }],
+      seats: [
+        ...next.seats,
+        ...copySeats(
+          clip.seats.filter((x) => x.tableId === source.id), roomId, tableId, nextSeatPrefix(next),
+        ),
+      ],
+    };
+    // A table inside a copied room is not selected in its own right: the room is.
+    if (!inheritedRoom) selection.push({ type: 'furniture', id: tableId });
+  }
 
-  return {
-    scene: {
-      ...scene,
-      furniture: [...scene.furniture, table],
-      seats: [...scene.seats, ...copySeats(clip.seats, room.id, tableId, nextSeatPrefix(scene))],
-    },
-    selection: { type: 'furniture', id: tableId },
-  };
+  if (selection.length === 0) return null;
+  return { scene: next, selection };
 }

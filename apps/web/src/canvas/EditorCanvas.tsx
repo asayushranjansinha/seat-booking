@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useEffect, useRef } from 'react';
 import { applyTransform, composeTransform, invertTransform } from '@seat-booking/geometry';
-import { snapValue, useEditorStore, type Selection } from '@/state/editorStore';
+import { snapValue, useEditorStore, type Selection, type SelectionItem } from '@/state/editorStore';
 import { pointer as pointerWorld } from '@/editor/pointer';
 import type { SceneJson, TransformJson } from '@/api/types';
 import { buildSceneGraph, disposeGraph, type HandleData, type PickData } from './sceneGraph';
@@ -29,13 +29,64 @@ const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
  * depending on where they fall on screen. The 3D toggle swaps in a perspective camera
  * over the very same scene graph, so the two views cannot disagree.
  */
+/** A seat sits on a table which sits in a room; the innermost one is always the target. */
+const SPECIFICITY = { seat: 0, furniture: 1, room: 2 } as const;
+const specificityOf = (t: 'seat' | 'furniture' | 'room') => SPECIFICITY[t];
+
+/** How far a press may wander, in metres, and still count as a click rather than a sweep. */
+const CLICK_SLOP = 0.1;
+
+/** How close to a wall counts as grabbing the room itself rather than its floor. */
+const ROOM_EDGE = 0.6;
+
+/** Is this point near enough to one of the room's own walls to mean "move the room"? */
+function onRoomEdge(scene: SceneJson, p: { x: number; y: number }, roomId: string): boolean {
+  const wall = nearestWall(scene, p, ROOM_EDGE);
+  return wall?.roomId === roomId;
+}
+
+/**
+ * Which tables a swept box caught.
+ *
+ * <p>Tables only. A box drawn across a floor is almost always someone reaching for the
+ * furniture — including the room it was drawn inside would select the very thing the box
+ * was drawn on, and including every seat would bury the group in sixty entries nobody
+ * asked for. Rooms and seats are still selectable by clicking.
+ *
+ * <p>A table counts when its ORIGIN is inside the box, which is the rule that lets a
+ * loose sweep behave the way it looks: clip a table's corner and you did not mean it.
+ */
+function tablesWithin(
+  scene: SceneJson | null, a: { x: number; y: number }, b: { x: number; y: number },
+): SelectionItem[] {
+  if (!scene) return [];
+  const minX = Math.min(a.x, b.x);
+  const maxX = Math.max(a.x, b.x);
+  const minY = Math.min(a.y, b.y);
+  const maxY = Math.max(a.y, b.y);
+  return scene.furniture
+    .filter((table) => {
+      const room = scene.rooms.find((r) => r.id === table.roomId);
+      if (!room) return false;
+      const world = composeTransform(room.transform, table.transform);
+      return world.x >= minX && world.x <= maxX && world.y >= minY && world.y <= maxY;
+    })
+    .map((table) => ({ type: 'furniture', id: table.id }));
+}
+
 export function EditorCanvas() {
   const host = useRef<HTMLDivElement>(null);
   const dragRef = useRef<
-    | { mode: 'move'; selection: NonNullable<Selection>; offset: THREE.Vector2 }
+    // A group moves by a DELTA from where the pointer was last frame, not to an absolute
+    // position: there is no single position a group is at.
+    | { mode: 'move'; last: THREE.Vector2 }
     | { mode: 'handle'; handle: HandleData; parent: TransformJson }
+    // `room` is the room the sweep began on top of, if any: a press that never moves is
+    // a click, and a click on a room selects it.
+    | { mode: 'marquee'; from: THREE.Vector2; to: THREE.Vector2; room: string | null }
     | null
   >(null);
+  const marqueeRef = useRef<{ from: { x: number; y: number }; to: { x: number; y: number } } | null>(null);
   const guidesRef = useRef<Array<[{ x: number; y: number }, { x: number; y: number }]>>([]);
 
   useEffect(() => {
@@ -140,7 +191,7 @@ export function EditorCanvas() {
     };
 
     /** What the pointer is over right now, expressed as a CSS cursor. */
-    const hoverCursor = (state: ReturnType<typeof useEditorStore.getState>): string => {
+    const hoverCursor = (state: ReturnType<typeof useEditorStore.getState>, _world: THREE.Vector2): string => {
       if (state.mode === 'PLAN' && state.tool !== 'SELECT') {
         return state.editable ? 'crosshair' : 'not-allowed';
       }
@@ -151,6 +202,18 @@ export function EditorCanvas() {
       const overEntity = hits.some((h) => (h.object.userData as { pick?: PickData }).pick);
       if (state.mode === 'BOOK') return overEntity ? 'pointer' : 'default';
       if (!overHandle && !overEntity) return 'default';
+      // Over a room's floor with nothing more specific under the pointer: a press here
+      // sweeps a box rather than moving anything, so say so.
+      if (state.editable && state.scene) {
+        const innermost = hits
+          .map((h) => (h.object.userData as { pick?: PickData }).pick)
+          .filter((x): x is PickData => !!x)
+          .sort((a, b) => specificityOf(a.selection.type) - specificityOf(b.selection.type))[0];
+        if (innermost?.selection.type === 'room'
+            && !onRoomEdge(state.scene, { x: _world.x, y: _world.y }, innermost.selection.id)) {
+          return 'crosshair';
+        }
+      }
       // 3D selects but never moves. Promising a grab here is how someone ends up dragging
       // a chair around a picture of a room and concluding the editor is broken.
       if (state.view === '3D') return 'pointer';
@@ -299,7 +362,7 @@ export function EditorCanvas() {
         return;
       }
 
-      const specificity = { seat: 0, furniture: 1, room: 2 } as const;
+      const specificity = SPECIFICITY;
       // Raycasting reads matrixWorld, which three.js refreshes during render. A graph
       // rebuilt since the last frame still carries identity matrices, so every room
       // tests as if it sat at the origin: clicks land on whichever room happens to
@@ -314,27 +377,58 @@ export function EditorCanvas() {
           return specificity[pa] - specificity[pb] || a.distance - b.distance;
         })[0];
       if (!picked) {
-        state.setSelection(null);
+        // Empty floor. Shift keeps what is held — otherwise sweeping a second group would
+        // throw away the first — and a plain press begins a box.
+        if (!event.shiftKey) state.setSelection([]);
+        if (state.view === '2D' && state.mode === 'PLAN' && state.editable) {
+          dragRef.current = { mode: 'marquee', from: world.clone(), to: world.clone(), room: null };
+          marqueeRef.current = { from: { x: world.x, y: world.y }, to: { x: world.x, y: world.y } };
+          renderer.domElement.setPointerCapture(event.pointerId);
+        }
         return;
       }
       const pick = (picked.object.userData as { pick: PickData }).pick;
-      state.setSelection(pick.selection);
-      if (state.view === '3D') return; // 3D is for review, not authoring
 
+      if (event.shiftKey) {
+        state.toggleSelection(pick.selection);
+        return; // a shift-click adjusts the group; it does not begin dragging it
+      }
+
+      // Pressing on something already in the group keeps the group, so it can be dragged
+      // as one. Pressing anything else selects just that.
+      const alreadyHeld = state.selection.some(
+        (x) => x.type === pick.selection.type && x.id === pick.selection.id,
+      );
+
+      if (state.view === '3D') {
+        state.setSelection([pick.selection]);
+        return; // 3D is for review, not authoring
+      }
       if (state.mode === 'BOOK') {
+        state.setSelection([pick.selection]);
         return; // booking selects a seat; it never moves one
       }
+
+      // A room's floor covers everything inside it, so "press on empty floor" would only
+      // ever happen OUTSIDE a room — useless, because the tables worth sweeping up are
+      // all inside one. So a room is grabbed by its WALL and swept from its middle. Both
+      // gestures stay available with no mode to remember, and the cursor says which is
+      // which: crosshair over the floor, grab near an edge.
+      if (pick.selection.type === 'room' && state.editable && !onRoomEdge(s, world, pick.selection.id)) {
+        dragRef.current = {
+          mode: 'marquee', from: world.clone(), to: world.clone(), room: pick.selection.id,
+        };
+        renderer.domElement.setPointerCapture(event.pointerId);
+        return;
+      }
+
+      if (!alreadyHeld) state.setSelection([pick.selection]);
       // A published layout is a record of what people are booking against, not a
       // scratchpad. Letting it drag would move it on screen and then lose the move,
       // because the save is gated on exactly this condition.
       if (!state.editable) return;
 
-      const local = toLocal(s, pick.selection, world);
-      dragRef.current = {
-        mode: 'move',
-        selection: pick.selection,
-        offset: new THREE.Vector2(local.x - pick.local.x, local.y - pick.local.y),
-      };
+      dragRef.current = { mode: 'move', last: world.clone() };
       state.beginDrag();
       renderer.domElement.setPointerCapture(event.pointerId);
     };
@@ -354,7 +448,7 @@ export function EditorCanvas() {
         // Nothing on a canvas announces itself as draggable the way a button announces
         // itself as clickable. The cursor is the only affordance there is, so it has to
         // say which of the three things is true here: draw, grab, or look.
-        renderer.domElement.style.cursor = hoverCursor(state);
+        renderer.domElement.style.cursor = hoverCursor(state, world);
         // Only track the cursor while a stroke is open; otherwise every mouse move would
         // rebuild the scene graph for nothing.
         if (state.drawing) state.setCursor({ x: world.x, y: world.y });
@@ -381,19 +475,63 @@ export function EditorCanvas() {
         return;
       }
 
-      // Walls and table edges pull the drag before the grid does, because a table is
-      // meant to sit against a wall and the wall is rarely on a 0.25m grid.
-      const snapped = state.snapEnabled
-        ? snapToGeometry(s, { x: world.x, y: world.y }, drag.selection.id)
-        : { point: { x: world.x, y: world.y }, guides: [] };
-      guidesRef.current = snapped.guides;
+      if (drag.mode === 'marquee') {
+        drag.to.copy(world);
+        marqueeRef.current = {
+          from: { x: drag.from.x, y: drag.from.y },
+          to: { x: world.x, y: world.y },
+        };
+        renderer.domElement.style.cursor = 'crosshair';
+        return;
+      }
 
-      const local = toLocal(s, drag.selection, new THREE.Vector2(snapped.point.x, snapped.point.y));
-      state.moveEntity(drag.selection, local.x - drag.offset.x, local.y - drag.offset.y);
+      // A group moves by how far the pointer travelled since the last frame. Snapping a
+      // group to the grid would mean choosing one member to snap and dragging the rest
+      // along, so the delta is snapped instead: the group keeps its internal spacing
+      // exactly and still lands on grid steps.
+      const raw = { x: world.x - drag.last.x, y: world.y - drag.last.y };
+      const grid = state.gridSnap;
+      const delta = state.snapEnabled && grid > 0
+        ? { x: Math.round(raw.x / grid) * grid, y: Math.round(raw.y / grid) * grid }
+        : raw;
+      if (delta.x === 0 && delta.y === 0) return;
+      drag.last.set(drag.last.x + delta.x, drag.last.y + delta.y);
+      state.moveSelectionBy(delta.x, delta.y);
     };
 
     const onPointerUp = (event: PointerEvent) => {
-      if (!dragRef.current) return;
+      const drag = dragRef.current;
+      if (!drag) return;
+
+      if (drag.mode === 'marquee') {
+        const state = useEditorStore.getState();
+        const moved = Math.hypot(drag.to.x - drag.from.x, drag.to.y - drag.from.y) > CLICK_SLOP;
+        if (!moved) {
+          // A press that went nowhere is a click, not an empty sweep. On a room it picks
+          // the room; on bare floor it clears, which the pointerdown already did.
+          state.setSelection(drag.room ? [{ type: 'room', id: drag.room }] : []);
+          dragRef.current = null;
+          marqueeRef.current = null;
+          renderer.domElement.style.cursor = 'grab';
+          renderer.domElement.releasePointerCapture?.(event.pointerId);
+          return;
+        }
+        const picked = tablesWithin(state.scene, drag.from, drag.to);
+        // Shift adds the sweep to what is already held, so two passes over different
+        // parts of a floor build one group.
+        const existing = event.shiftKey ? state.selection : [];
+        const keys = new Set(existing.map((x) => `${x.type}:${x.id}`));
+        state.setSelection([
+          ...existing,
+          ...picked.filter((x: SelectionItem) => !keys.has(`${x.type}:${x.id}`)),
+        ]);
+        dragRef.current = null;
+        marqueeRef.current = null;
+        renderer.domElement.style.cursor = 'default';
+        renderer.domElement.releasePointerCapture?.(event.pointerId);
+        return;
+      }
+
       dragRef.current = null;
       renderer.domElement.style.cursor = 'grab';
       guidesRef.current = [];
@@ -435,7 +573,7 @@ export function EditorCanvas() {
         s.planVersionId,
         s.revision,
         view,
-        selection ? `${selection.type}:${selection.id}` : '-',
+        selection.map((x) => `${x.type}:${x.id}`).join(','),
         violations.length,
         // Positions change without the revision changing, so the graph must follow them.
         s.rooms.length, s.furniture.length, s.seats.length,
@@ -448,6 +586,7 @@ export function EditorCanvas() {
         JSON.stringify(drawing),
         drawing ? JSON.stringify(cursor) : '-',
         JSON.stringify(guidesRef.current),
+        JSON.stringify(marqueeRef.current),
       ].join('#');
       if (key === lastKey) return;
       lastKey = key;
@@ -468,6 +607,7 @@ export function EditorCanvas() {
         drawing,
         cursor,
         snapGuides: guidesRef.current,
+        marquee: marqueeRef.current,
         // Grips are sized in world metres, so they have to shrink as the view zooms in.
         handleScale: orthoSpan / ortho.zoom / 42,
       });

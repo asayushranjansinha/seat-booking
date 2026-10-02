@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { SceneJson, ShapeJson } from '@/api/types';
-import type { Selection } from '@/state/editorStore';
+import type { Selection, SelectionItem } from '@/state/editorStore';
 import { extrudedGeometry, footprintGeometry, outlinePoints, ringFor, wallGeometry } from './shapeToThree';
 import type { Drawing } from '@/state/editorStore';
 
@@ -78,7 +78,7 @@ function solidMesh(shape: ShapeJson, height: number, color: number, opacity = 1)
  * on it moves correctly, without a single seat position being recomputed here.
  */
 export interface BuildOptions {
-  selection: Selection;
+  selection: SelectionItem[];
   mode: 'PLAN' | 'BOOK';
   occupancy: Record<string, 'FREE' | 'BOOKED' | 'MINE' | 'BLOCKED'>;
   invalidIds: Set<string>;
@@ -86,18 +86,21 @@ export interface BuildOptions {
   drawing: Drawing;
   cursor: { x: number; y: number } | null;
   snapGuides: Array<[{ x: number; y: number }, { x: number; y: number }]>;
+  /** The box being swept right now, in world metres, or null. */
+  marquee: { from: { x: number; y: number }; to: { x: number; y: number } } | null;
   /** World metres per screen unit, so grips stay a usable size at any zoom. */
   handleScale: number;
 }
 
 export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.Group {
-  const { selection, invalidIds, view, drawing, cursor, snapGuides, handleScale, mode, occupancy } =
+  const { selection, invalidIds, view, drawing, cursor, snapGuides, marquee, handleScale, mode, occupancy } =
     options;
   const root = new THREE.Group();
   const roomGroups = new Map<string, THREE.Group>();
   const tableGroups = new Map<string, THREE.Group>();
 
-  const isSelected = (type: string, id: string) => selection?.type === type && selection.id === id;
+  const held = new Set(selection.map((x) => `${x.type}:${x.id}`));
+  const isSelected = (type: string, id: string) => held.has(`${type}:${id}`);
 
   for (const room of scene.rooms) {
     const group = new THREE.Group();
@@ -247,22 +250,25 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
 
   // Grips for whatever is selected, in 2D only, and never while booking: a seat's
   // position is not something a person booking it may change.
-  if (selection && view === '2D' && mode === 'PLAN') {
-    if (selection.type === 'room') {
-      const room = scene.rooms.find((r) => r.id === selection.id);
+  // Grips belong to ONE shape. A group has no single width to drag, and showing a set
+  // per member would put a dozen handles on screen that each resize something different.
+  const only = selection.length === 1 ? selection[0]! : null;
+  if (only && view === '2D' && mode === 'PLAN') {
+    if (only.type === 'room') {
+      const room = scene.rooms.find((r) => r.id === only.id);
       const parent = room && roomGroups.get(room.id);
       if (room && parent) {
         // Grips live in the room's PARENT space, so they are siblings of the room rather
         // than children of it; otherwise resizing would scale the grips too.
         const holder = new THREE.Group();
-        holder.add(buildHandles(room.shape, { x: 0, y: 0, rot: 0 }, selection, handleScale));
+        holder.add(buildHandles(room.shape, { x: 0, y: 0, rot: 0 }, only, handleScale));
         parent.add(holder);
       }
-    } else if (selection.type === 'furniture') {
-      const table = scene.furniture.find((f) => f.id === selection.id);
+    } else if (only.type === 'furniture') {
+      const table = scene.furniture.find((f) => f.id === only.id);
       const parent = table && roomGroups.get(table.roomId);
       if (table && parent) {
-        parent.add(buildHandles(table.shape, table.transform, selection, handleScale));
+        parent.add(buildHandles(table.shape, table.transform, only, handleScale));
       }
     }
   }
@@ -294,6 +300,19 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
       [new THREE.Vector3(a.x, a.y, 0.45), new THREE.Vector3(b.x, b.y, 0.45)],
       COLORS.guide,
     ));
+  }
+
+  if (marquee) {
+    const { from, to } = marquee;
+    const z = 0.5; // above everything, including the grips
+    const corners = [
+      new THREE.Vector3(from.x, from.y, z),
+      new THREE.Vector3(to.x, from.y, z),
+      new THREE.Vector3(to.x, to.y, z),
+      new THREE.Vector3(from.x, to.y, z),
+      new THREE.Vector3(from.x, from.y, z),
+    ];
+    root.add(lineFrom(corners, COLORS.roomEdgeSelected));
   }
 
   return root;

@@ -1,7 +1,8 @@
 'use client';
 
 import {
-  AlignHorizontalDistributeCenter, Armchair, Building2, Info, LayoutGrid, Loader2, PencilRuler, Pin,
+  AlignHorizontalDistributeCenter, Armchair, BoxSelect, Building2, Info, LayoutGrid, Loader2,
+  PencilRuler, Pin,
   PinOff, Table2, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -13,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
-import { useEditorStore } from '@/state/editorStore';
+import { useEditorStore, useSingleSelection } from '@/state/editorStore';
 
 const num = (v: string, fallback: number) => {
   const n = Number.parseFloat(v);
@@ -38,7 +39,8 @@ export function InspectorPanel({
   starting: boolean;
 }) {
   const scene = useEditorStore((s) => s.scene);
-  const selection = useEditorStore((s) => s.selection);
+  const selection = useSingleSelection();
+  const selectedCount = useEditorStore((s) => s.selection.length);
   const canEdit = scene?.status === 'DRAFT';
 
   // The very first screen anyone sees on a fresh install, and the one that was blank:
@@ -51,6 +53,9 @@ export function InspectorPanel({
   // leaves an admin staring at an empty grid with no way to begin.
   if (!scene && noLayout) return <EmptyFloor canStart={canStart} onStart={onStart} starting={starting} />;
   if (!scene) return null;
+  // Several things at once: there is no single width to type, so the panel reports what
+  // is held and offers the operations that do make sense for a group.
+  if (selectedCount > 1) return <GroupSelection canEdit={canEdit} />;
   if (!selection) return <Overview />;
   if (selection.type === 'room') return <RoomInspector canEdit={canEdit} />;
   if (selection.type === 'furniture') return <TableInspector canEdit={canEdit} />;
@@ -171,6 +176,53 @@ function NoEstate({ canStart, onAdd }: { canStart: boolean; onAdd: () => void })
   );
 }
 
+/**
+ * What is on screen when several things are held at once.
+ *
+ * <p>No width, no rotation, no rate: none of them have one answer for a group, and a box
+ * showing the first one's value would be a lie the moment it was typed into. What a group
+ * can do is move, duplicate and be deleted, so that is what it says.
+ */
+function GroupSelection({ canEdit }: { canEdit: boolean }) {
+  const selection = useEditorStore((s) => s.selection);
+  const deleteSelected = useEditorStore((s) => s.deleteSelected);
+
+  const count = (type: string) => selection.filter((x) => x.type === type).length;
+  const parts = [
+    [count('room'), 'room', 'rooms'],
+    [count('furniture'), 'table', 'tables'],
+    [count('seat'), 'seat', 'seats'],
+  ] as const;
+
+  return (
+    <Shell
+      icon={<BoxSelect className="size-4" />}
+      title={`${selection.length} selected`}
+      subtitle={parts
+        .filter(([n]) => n > 0)
+        .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`)
+        .join(' · ')}
+      locked={!canEdit}
+      onDelete={canEdit ? deleteSelected : undefined}
+    >
+      <ul className="space-y-2.5 text-sm text-muted-foreground">
+        <li>Drag any one of them and the whole group moves together.</li>
+        <li>Arrow keys nudge the group by one grid square, Shift by four.</li>
+        <li><span className="font-medium text-foreground">⌘C</span> then{' '}
+          <span className="font-medium text-foreground">⌘V</span> duplicates all of
+          it, keeping the spacing between them.</li>
+      </ul>
+
+      <Separator />
+
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Shift-click to add or remove one. Drag on empty floor to sweep up every table
+        inside the box.
+      </p>
+    </Shell>
+  );
+}
+
 function EmptyFloor({
   canStart, onStart, starting,
 }: {
@@ -245,7 +297,7 @@ function Overview() {
 
 function RoomInspector({ canEdit }: { canEdit: boolean }) {
   const scene = useEditorStore((s) => s.scene)!;
-  const selection = useEditorStore((s) => s.selection)!;
+  const selection = useSingleSelection()!;
   const renameRoom = useEditorStore((s) => s.renameRoom);
   const setRoomRate = useEditorStore((s) => s.setRoomRate);
   const resizeShape = useEditorStore((s) => s.resizeShape);
@@ -330,7 +382,7 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
 
 function TableInspector({ canEdit }: { canEdit: boolean }) {
   const scene = useEditorStore((s) => s.scene)!;
-  const selection = useEditorStore((s) => s.selection)!;
+  const selection = useSingleSelection()!;
   const resizeShape = useEditorStore((s) => s.resizeShape);
   const rotateEntity = useEditorStore((s) => s.rotateEntity);
   const moveEntity = useEditorStore((s) => s.moveEntity);
@@ -382,7 +434,7 @@ function TableInspector({ canEdit }: { canEdit: boolean }) {
 
 function SeatInspector({ canEdit }: { canEdit: boolean }) {
   const scene = useEditorStore((s) => s.scene)!;
-  const selection = useEditorStore((s) => s.selection)!;
+  const selection = useSingleSelection()!;
   const clearSeatOverride = useEditorStore((s) => s.clearSeatOverride);
   const moveEntity = useEditorStore((s) => s.moveEntity);
   const deleteSelected = useEditorStore((s) => s.deleteSelected);

@@ -25,17 +25,6 @@ function describe(e: unknown): string | undefined {
   return undefined;
 }
 
-/** Where the selected thing currently sits, in its own parent's frame. */
-function positionOf(
-  scene: ReturnType<typeof useEditorStore.getState>['scene'],
-  sel: NonNullable<ReturnType<typeof useEditorStore.getState>['selection']>,
-): { x: number; y: number } | null {
-  if (!scene) return null;
-  if (sel.type === 'room') return scene.rooms.find((r) => r.id === sel.id)?.transform ?? null;
-  if (sel.type === 'furniture') return scene.furniture.find((f) => f.id === sel.id)?.transform ?? null;
-  return scene.seats.find((s) => s.id === sel.id)?.localTransform ?? null;
-}
-
 export function Workspace({ session, onSignOut }: { session: SessionJson; onSignOut: () => void }) {
   const scene = useEditorStore((s) => s.scene);
   const etag = useEditorStore((s) => s.etag);
@@ -252,8 +241,9 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
           // trying to copy text somewhere on the page, and stealing that would be rude.
           if (!clip) return;
           e.preventDefault();
-          toast.success(clip.kind === 'room' ? 'Room copied' : 'Table copied', {
-            description: 'Point where you want it and press \u2318V.',
+          const n = clip.rooms.length + clip.tables.length;
+          toast.success(n === 1 ? 'Copied' : `${n} things copied`, {
+            description: 'Point where you want them and press \u2318V.',
           });
           return;
         }
@@ -269,14 +259,11 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
           // A drag cannot reliably move something by one grid square, and on a trackpad
           // it often cannot move it by a small amount at all. Arrows can.
           e.preventDefault();
-          const sel = store.selection;
-          if (!sel) return;
-          const here = positionOf(store.scene, sel);
-          if (!here) return;
+          if (store.selection.length === 0) return;
           const step = action.big ? store.gridSnap * 4 : store.gridSnap;
           // One history entry for the whole press, the same as one drag.
           store.beginDrag();
-          store.moveEntity(sel, here.x + action.dx * step, here.y + action.dy * step, false);
+          store.moveSelectionBy(action.dx * step, action.dy * step);
           store.endDrag();
           return;
         }
