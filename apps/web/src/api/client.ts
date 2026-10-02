@@ -29,6 +29,46 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+/** Called when the session is genuinely over, so the app can return to sign-in. */
+let onAuthFailure: (() => void) | null = null;
+
+export function setAuthFailureHandler(handler: (() => void) | null): void {
+  onAuthFailure = handler;
+}
+
+/**
+ * The in-flight refresh, shared by every request that needs one.
+ *
+ * <p>Refresh tokens ROTATE, and presenting one that has already been redeemed is treated
+ * as theft and revokes the whole family. Several requests failing at once is ordinary —
+ * the editor loads a scene and the occupancy together — so letting each start its own
+ * refresh would mean the second replays a spent token and signs the person out entirely.
+ * They all wait on one.
+ */
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function refreshAccessToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const response = await fetch(`${BASE}/api/auth/refresh`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (!response.ok) return false;
+        const session = (await response.json()) as SessionJson;
+        accessToken = session.accessToken;
+        return true;
+      } catch {
+        return false;
+      }
+    })().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -48,7 +88,11 @@ interface RequestOptions {
   allowStatuses?: number[];
 }
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<{ data: T; etag: string | null }> {
+async function request<T>(
+  path: string,
+  options: RequestOptions = {},
+  isRetry = false,
+): Promise<{ data: T; etag: string | null }> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
   if (options.ifMatch) headers['If-Match'] = options.ifMatch;
@@ -64,6 +108,22 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<{
   const etag = response.headers.get('ETag');
   const text = await response.text();
   const parsed: unknown = text ? JSON.parse(text) : null;
+
+  // An access token lasts 15 minutes, so a tab left open will hit this. Refresh once and
+  // replay the request, rather than making the person reload and lose what they were
+  // doing. Auth endpoints are excluded or a failed refresh would recurse.
+  if (
+    response.status === 401 &&
+    !isRetry &&
+    !path.startsWith('/api/auth/') &&
+    !path.startsWith('/api/invites/')
+  ) {
+    if (await refreshAccessToken()) {
+      return request<T>(path, options, true);
+    }
+    setAccessToken(null);
+    onAuthFailure?.();
+  }
 
   if (!response.ok && !(options.allowStatuses ?? []).includes(response.status)) {
     const message =

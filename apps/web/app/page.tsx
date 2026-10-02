@@ -2,7 +2,7 @@
 
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { api } from '@/api/client';
+import { api, setAuthFailureHandler } from '@/api/client';
 import type { SessionJson } from '@/api/types';
 import { SignIn } from '@/components/SignIn';
 import { Workspace } from '@/components/Workspace';
@@ -18,6 +18,13 @@ export default function Page() {
       setSession(s);
       setChecking(false);
     });
+  }, []);
+
+  // When the refresh token is finally spent or revoked there is nothing left to retry,
+  // so drop back to sign-in rather than leaving a workspace that silently fails.
+  useEffect(() => {
+    setAuthFailureHandler(() => setSession(null));
+    return () => setAuthFailureHandler(null);
   }, []);
 
   if (checking) {

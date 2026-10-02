@@ -46,6 +46,11 @@ class LayoutLifecycleTest {
     @Autowired private AppUserRepository users;
     @Autowired private JdbcClient jdbc;
 
+    @org.junit.jupiter.api.BeforeEach
+    void requireDemoData() {
+        com.seatbooking.DemoData.require(jdbc);
+    }
+
     private Floor demoFloor() {
         return floors.findAll().stream().findFirst().orElseThrow();
     }

@@ -118,6 +118,15 @@ interface EditorState extends UndoableState {
 
 const uuid = (): string => crypto.randomUUID();
 
+/**
+ * How close two pen clicks have to be, in metres, to count as the same corner.
+ *
+ * <p>A double click, or a click that lands a pixel from the last one, otherwise adds a
+ * second vertex on top of the first. The ring then has a zero-length edge, JTS rejects it
+ * as degenerate, and the room can never be published — with nothing on screen to show why.
+ */
+const SAME_CORNER = 0.08;
+
 /** Whether the current drag gesture has already contributed its one history entry. */
 let dragHistoryRecorded = false;
 
@@ -434,11 +443,14 @@ export const useEditorStore = create<EditorState>()(
       startPolygon: (p) => set({ drawing: { kind: 'POLYGON', points: [p] } }),
 
       addPolygonPoint: (p) =>
-        set((state) =>
-          state.drawing?.kind === 'POLYGON'
-            ? { ...state, drawing: { kind: 'POLYGON', points: [...state.drawing.points, p] } }
-            : state,
-        ),
+        set((state) => {
+          if (state.drawing?.kind !== 'POLYGON') return state;
+          const last = state.drawing.points[state.drawing.points.length - 1];
+          // Ignore a corner on top of the previous one rather than storing a zero-length
+          // edge that only shows up later as "this room cannot be published".
+          if (last && Math.hypot(p.x - last.x, p.y - last.y) < SAME_CORNER) return state;
+          return { ...state, drawing: { kind: 'POLYGON', points: [...state.drawing.points, p] } };
+        }),
 
       /**
        * Close the pen and turn the traced points into a room.
@@ -451,7 +463,12 @@ export const useEditorStore = create<EditorState>()(
       commitPolygon: () =>
         set((state) => {
           if (state.drawing?.kind !== 'POLYGON' || !state.scene) return state;
-          const pts = state.drawing.points;
+          // Belt and braces: drop any coincident corners that got through, and refuse to
+          // make a room out of fewer than three distinct ones.
+          const pts = state.drawing.points.filter((p, i, all) => {
+            const prev = all[i - 1];
+            return !prev || Math.hypot(p.x - prev.x, p.y - prev.y) >= SAME_CORNER;
+          });
           if (pts.length < 3) return { ...state, drawing: null, tool: 'SELECT' };
 
           const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length;

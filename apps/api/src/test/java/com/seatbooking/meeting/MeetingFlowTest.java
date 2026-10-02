@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import com.seatbooking.DemoData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,7 @@ class MeetingFlowTest {
 
     @BeforeEach
     void setUp() {
+        DemoData.require(jdbc);
         managerToken = login("manager@demo.test");
         tableId = jdbc.sql("""
                 SELECT f.id FROM furniture f

@@ -14,6 +14,15 @@ import { PlanTopBar } from '@/components/plan/PlanTopBar';
 import { StatusReadout } from '@/components/plan/StatusReadout';
 import { useEditorStore } from '@/state/editorStore';
 
+/** A short, human reason from an ApiError, or nothing rather than a stack trace. */
+function describe(e: unknown): string | undefined {
+  if (e instanceof ApiError) {
+    const body = e.body as { message?: string } | null;
+    return body?.message ?? e.message;
+  }
+  return undefined;
+}
+
 export function Workspace({ session, onSignOut }: { session: SessionJson; onSignOut: () => void }) {
   const scene = useEditorStore((s) => s.scene);
   const etag = useEditorStore((s) => s.etag);
@@ -44,11 +53,14 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
   }, [isAdmin, setMode]);
 
   useEffect(() => {
-    void api.buildings().then((list) => {
-      setBuildings(list);
-      const first = list[0]?.floors[0];
-      if (first) setFloorId(first.id);
-    });
+    void api
+      .buildings()
+      .then((list) => {
+        setBuildings(list);
+        const first = list[0]?.floors[0];
+        if (first) setFloorId(first.id);
+      })
+      .catch((e) => toast.error('Could not load buildings', { description: describe(e) }));
   }, []);
 
   useEffect(() => {
@@ -113,6 +125,10 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
       setViolations(found);
       setAffected([]);
       if (found.length === 0) toast.success('No problems found');
+    } catch (e) {
+      // Without this an ApiError escapes into Next's runtime overlay, which is a
+      // full-screen crash report for what is only a request that failed.
+      toast.error('Could not check the layout', { description: describe(e) });
     } finally {
       setBusy(null);
     }
@@ -140,6 +156,8 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
             : 'Fix the problems listed at the bottom.',
         });
       }
+    } catch (e) {
+      toast.error('Could not publish', { description: describe(e) });
     } finally {
       setBusy(null);
     }
@@ -154,8 +172,8 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
       setNoLayout(false);
       await refreshBuildings();
       toast.success('Editable draft created', { description: 'Changes stay private until you publish.' });
-    } catch {
-      toast.error('Only an admin can edit a layout');
+    } catch (e) {
+      toast.error('Could not start a draft', { description: describe(e) });
     } finally {
       setBusy(null);
     }

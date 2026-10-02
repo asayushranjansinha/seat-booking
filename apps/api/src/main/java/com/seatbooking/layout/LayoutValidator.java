@@ -41,8 +41,15 @@ public class LayoutValidator {
             }
             Polygon polygon = Jts.polygon(shape, world);
             if (!polygon.isSimple() || !polygon.isValid()) {
-                violations.add(Violation.error("ROOM_SELF_INTERSECTS", "room", room.id(),
-                        "Room '" + room.name() + "' has a self-intersecting outline."));
+                // Distinguish the two ways an outline goes wrong. A ring with a repeated
+                // corner is not self-intersecting, and telling someone it is sends them
+                // looking for a crossing edge that does not exist.
+                violations.add(repeatedCorner(shape)
+                        ? Violation.error("ROOM_REPEATED_CORNER", "room", room.id(),
+                                "Room '" + room.name() + "' has two corners in the same place. "
+                                        + "Delete it and trace the outline again.")
+                        : Violation.error("ROOM_SELF_INTERSECTS", "room", room.id(),
+                                "Room '" + room.name() + "' has an outline that crosses itself."));
             }
             roomWorld.put(room.id(), world);
             roomPolygons.put(room.id(), polygon);
@@ -195,6 +202,19 @@ public class LayoutValidator {
                         "The partition leaves the room outline."));
             }
         }
+    }
+
+    /** True when two consecutive corners of the outline sit on top of each other. */
+    private static boolean repeatedCorner(Shape shape) {
+        List<Vec2> ring = Tessellation.tessellate(shape, Jts.TOLERANCE);
+        for (int i = 0; i < ring.size(); i++) {
+            Vec2 a = ring.get(i);
+            Vec2 b = ring.get((i + 1) % ring.size());
+            if (a.sub(b).length() < Jts.TOLERANCE) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A human-readable name for a piece of furniture, for the violation message. */

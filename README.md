@@ -50,6 +50,10 @@ cd apps/api && mvn test   # the same fixtures, plus schema and lifecycle tests
 ./tools/mutation-check.sh # proves the cross-language fixtures can actually fail
 ```
 
+The Java integration tests assert against the seeded demo floor, so run
+`./tools/demo-reset.sh` first if you have cleared it with `tools/empty-floor.sh`. They
+say so themselves rather than failing cryptically.
+
 ## Layout
 
 ```
