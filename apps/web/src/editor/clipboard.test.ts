@@ -133,13 +133,33 @@ describe('paste', () => {
     expect(seat.localTransform).toEqual({ x: -1, y: 1, rot: 0 });
   });
 
-  it('falls back to a nudge in its own room when the pointer is off the canvas', () => {
+  it('puts a copy clear below the original when there is no pointer to aim at', () => {
+    // Half a metre was the old offset and it was wrong at every scale but one: beside a
+    // 2 x 1 table with chairs — 2.4 m tall in all — a copy half a metre down sits on top
+    // of the original, and the two cannot be told apart or clicked apart. It now clears
+    // the full height of what was copied, plus a metre.
     const s = scene();
     const out = paste(s, clipOf(s), null)!;
     const pasted = out.scene.furniture.find((f) => f.id === out.selection[0]!.id)!;
     expect(pasted.roomId).toBe(ROOM_A);
-    expect(pasted.transform.x).toBeCloseTo(1.5, 9);
-    expect(pasted.transform.y).toBeCloseTo(0.5, 9);
+    expect(pasted.transform.x).toBeCloseTo(1, 9); // directly below, not off to one side
+    // The chairs reach about 1.2 m each side of the table's centre, so anything less than
+    // a 2.4 m drop would have the two chair rings overlapping. Asserted as a bound rather
+    // than an exact figure because the fixture's table is turned 0.25 rad, which makes
+    // the ring's true reach a cosine — and pinning that number would only be re-deriving
+    // the code under test.
+    const drop = 1 - pasted.transform.y;
+    expect(drop).toBeGreaterThan(2.4);
+  });
+
+  it('measures the chairs when deciding how far down a duplicate goes', () => {
+    // Strip the chairs and the same table needs less room, so the copy comes up closer.
+    const bare: SceneJson = { ...scene(), seats: [] };
+    const withChairs = paste(scene(), clipOf(scene()), null)!;
+    const without = paste(bare, extract(bare, [{ type: 'furniture', id: 't1' }])!, null)!;
+    const dropOf = (r: typeof withChairs) =>
+      1 - r.scene.furniture.find((f) => f.id === r.selection[0]!.id)!.transform.y;
+    expect(dropOf(without)).toBeLessThan(dropOf(withChairs));
   });
 
   it('pastes a room with new ids all the way down', () => {

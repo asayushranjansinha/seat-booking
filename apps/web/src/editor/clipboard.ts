@@ -17,7 +17,7 @@
  * <p>With the pointer off the canvas there is nowhere obvious to aim, so the copy lands
  * beside its original, in the way every drawing program has done for decades.
  */
-import { applyTransform, invertTransform } from '@seat-booking/geometry';
+import { applyTransform, invertTransform, shapeFromJson, tessellate } from '@seat-booking/geometry';
 import { roomAt } from '@/canvas/snapping';
 import type {
   FurnitureJson, GateJson, PartitionJson, RoomJson, SceneJson, SeatJson,
@@ -26,8 +26,11 @@ import type {
 // does not create a cycle at runtime.
 import type { SelectionItem } from '@/state/editorStore';
 
-/** How far a paste with no pointer to aim at is nudged, in metres. */
-const NUDGE = 0.5;
+/** The gap left between a duplicate and the thing it was duplicated from, in metres. */
+const DUPLICATE_GAP = 1;
+
+/** Tessellation tolerance, matching the canvas so a copy measures what is drawn. */
+const TOLERANCE = 1e-3;
 
 const uuid = () => crypto.randomUUID();
 
@@ -44,6 +47,28 @@ export interface Clip {
   tables: FurnitureJson[];
   seats: SeatJson[];
   anchor: { x: number; y: number };
+  /**
+   * How tall the copied group is, in metres, chairs included.
+   *
+   * <p>Only duplicate uses it, and only because a fixed offset cannot work: half a metre
+   * is a clear gap beside a 1.2 m desk and invisible beside a 20 m bench, where the copy
+   * lands on top of the original and the two become impossible to tell apart — or to
+   * click apart.
+   */
+  height: number;
+}
+
+/** How far a shape reaches from its own origin once turned, as a half-width and half-height. */
+function halfExtent(shape: FurnitureJson['shape'], rot: number): { x: number; y: number } {
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  let x = 0;
+  let y = 0;
+  for (const p of tessellate(shapeFromJson(shape), TOLERANCE)) {
+    x = Math.max(x, Math.abs(p.x * cos - p.y * sin));
+    y = Math.max(y, Math.abs(p.x * sin + p.y * cos));
+  }
+  return { x, y };
 }
 
 /** Where a table sits on the floor, with its room's own placement taken into account. */
@@ -89,7 +114,29 @@ export function extract(scene: SceneJson, selection: readonly SelectionItem[]): 
     y: (Math.min(...ys) + Math.max(...ys)) / 2,
   };
 
-  return { rooms, tables, seats, anchor };
+  // Measured from the seats too, not just the tables: a copy that clears the bench but
+  // sits on its chairs has not cleared anything.
+  let top = -Infinity;
+  let bottom = Infinity;
+  const extend = (centreY: number, half: number) => {
+    top = Math.max(top, centreY + half);
+    bottom = Math.min(bottom, centreY - half);
+  };
+  for (const room of rooms) {
+    extend(room.transform.y, halfExtent(room.shape, room.transform.rot).y);
+  }
+  for (const table of standalone) {
+    const world = worldOf(scene, table);
+    const room = scene.rooms.find((r) => r.id === table.roomId);
+    const rot = (room?.transform.rot ?? 0) + table.transform.rot;
+    extend(world.y, halfExtent(table.shape, rot).y);
+    for (const seat of scene.seats.filter((x) => x.tableId === table.id)) {
+      const offset = applyTransform({ x: 0, y: 0, rot }, seat.localTransform);
+      extend(world.y + offset.y, halfExtent(seat.shape, 0).y);
+    }
+  }
+
+  return { rooms, tables, seats, anchor, height: Number.isFinite(top) ? top - bottom : 0 };
 }
 
 /**
@@ -147,8 +194,11 @@ export interface PasteResult {
 export function paste(
   scene: SceneJson, clip: Clip, at: { x: number; y: number } | null,
 ): PasteResult | null {
-  const dx = at ? at.x - clip.anchor.x : NUDGE;
-  const dy = at ? at.y - clip.anchor.y : -NUDGE;
+  // No pointer to aim at — a duplicate, or a paste with the mouse off the canvas. Put the
+  // copy directly below what it came from, clear of it, so it reads as a second row
+  // rather than as the original having gone slightly blurry.
+  const dx = at ? at.x - clip.anchor.x : 0;
+  const dy = at ? at.y - clip.anchor.y : -(clip.height + DUPLICATE_GAP);
 
   let next = scene;
   const selection: SelectionItem[] = [];

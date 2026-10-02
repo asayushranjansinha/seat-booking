@@ -375,12 +375,23 @@ export function EditorCanvas() {
       // overlap the origin and nothing else is hit at all.
       graph?.updateMatrixWorld(true);
       const hits = graph ? raycaster.intersectObjects(graph.children, true) : [];
+      // Anything already held wins over anything that is not, before specificity even
+      // comes into it. Duplicates land near their originals and tables are routinely
+      // stacked while a layout is being worked out, so a press on a pile where one member
+      // IS the group must grab the group. Without this the press lands on whichever
+      // overlapping thing happens to be nearest, the group collapses to that one, and
+      // dragging a duplicated row moves a single table.
+      const isHeld = new Set(state.selection.map((x) => `${x.type}:${x.id}`));
       const picked = hits
         .filter((h) => (h.object.userData as { pick?: PickData }).pick)
         .sort((a, b) => {
-          const pa = (a.object.userData as { pick: PickData }).pick.selection.type;
-          const pb = (b.object.userData as { pick: PickData }).pick.selection.type;
-          return specificity[pa] - specificity[pb] || a.distance - b.distance;
+          const sa = (a.object.userData as { pick: PickData }).pick.selection;
+          const sb = (b.object.userData as { pick: PickData }).pick.selection;
+          const ha = isHeld.has(`${sa.type}:${sa.id}`) ? 0 : 1;
+          const hb = isHeld.has(`${sb.type}:${sb.id}`) ? 0 : 1;
+          return ha - hb
+            || specificity[sa.type] - specificity[sb.type]
+            || a.distance - b.distance;
         })[0];
       if (!picked) {
         // Empty floor. Shift keeps what is held — otherwise sweeping a second group would
