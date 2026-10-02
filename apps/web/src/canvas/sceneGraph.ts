@@ -3,6 +3,7 @@ import type { SceneJson, ShapeJson } from '@/api/types';
 import type { Selection, SelectionItem } from '@/state/editorStore';
 import { footprintGeometry, outlinePoints, ringFor } from './shapeToThree';
 import { chairMesh, doorMesh, partitionMesh, roomWalls, tableMesh } from './furniture';
+import { shade, tableColour } from './palette';
 import type { Drawing } from '@/state/editorStore';
 
 /**
@@ -257,9 +258,12 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
 
     const selected = isSelected('furniture', table.id);
     const invalid = invalidIds.has(table.id);
-    const colour = invalid ? COLORS.invalid : selected ? COLORS.tableSelected : COLORS.table;
+    const own = tableColour(table.id);
+    const colour = invalid ? COLORS.invalid : selected ? COLORS.tableSelected : own;
 
-    const furnitureMesh = tableMesh(table.shape, colour, COLORS.tableLip, view);
+    // The rim and legs are the table's own colour darkened, so a table stays one object
+    // rather than a top with somebody else's edge around it.
+    const furnitureMesh = tableMesh(table.shape, colour, shade(colour, 0.62), view);
     // The pick target stays the flat footprint: a leg is a hard thing to click, and
     // clicking the gap between four of them should still find the table.
     const target = pickTarget(table.shape, 0.005);
@@ -269,7 +273,7 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     } satisfies PickData;
     group.add(target);
     group.add(furnitureMesh);
-    group.add(lineFrom(outlinePoints(table.shape), selected ? 0x8dc2ff : 0x4a6c92));
+    group.add(lineFrom(outlinePoints(table.shape), selected ? COLORS.tableEdgeSelected : shade(own, 1.5)));
   }
 
   for (const seat of scene.seats) {
