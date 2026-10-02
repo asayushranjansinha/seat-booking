@@ -1,8 +1,8 @@
 'use client';
 
 import {
-  BoxSelect, Circle, DoorOpen, MousePointer2, PenTool, RectangleHorizontal, Square,
-  SplitSquareVertical,
+  BoxSelect, Circle, CircleDot, DoorOpen, Hand, MousePointer2, PenTool, RectangleHorizontal,
+  Square, SplitSquareVertical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -40,6 +40,12 @@ const GROUPS: ToolSpec[][] = [
       hint: 'Drag a box over the tables you want. Hold Shift to sweep again and add to the group. Returns to Select when you let go.',
       icon: BoxSelect,
     },
+    {
+      id: 'HAND',
+      label: 'Hand',
+      hint: 'Drag to move the view. Holding Space does the same from any tool, and two fingers on a trackpad slide the plan without either.',
+      icon: Hand,
+    },
   ],
   [
     { id: 'ROOM_RECT', label: 'Rectangular room', hint: 'Click the floor to place a rectangular room', icon: Square },
@@ -48,7 +54,7 @@ const GROUPS: ToolSpec[][] = [
   ],
   [
     { id: 'TABLE_RECT', label: 'Rectangular table', hint: 'Click inside a room to add a rectangular table', icon: RectangleHorizontal },
-    { id: 'TABLE_ROUND', label: 'Round table', hint: 'Click inside a room to add a round table', icon: Circle },
+    { id: 'TABLE_ROUND', label: 'Round table', hint: 'Click inside a room to add a round table', icon: CircleDot },
   ],
   [
     { id: 'GATE', label: 'Door', hint: 'Click a wall to put a door on it', icon: DoorOpen },

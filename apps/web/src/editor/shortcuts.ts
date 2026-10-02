@@ -46,6 +46,11 @@ export const TOOL_KEYS: Record<string, Tool> = {
   '1': 'SELECT',
   v: 'SELECT',
   '2': 'MARQUEE',
+  m: 'MARQUEE',
+  // The hand keeps H and no digit. Inserting it into the numbering would renumber every
+  // tool below it for the second time in two changes, and H is the key every canvas
+  // editor already uses.
+  h: 'HAND',
   '3': 'ROOM_RECT',
   '4': 'ROOM_CIRCLE',
   '5': 'ROOM_POLY',
@@ -55,9 +60,10 @@ export const TOOL_KEYS: Record<string, Tool> = {
   '9': 'PARTITION',
 };
 
-/** The key shown on a tool's button, for the tooltip. */
+/** The key shown on a tool's button: its digit where it has one, otherwise its letter. */
 export function keyForTool(tool: Tool): string {
-  return Object.entries(TOOL_KEYS).find(([k, t]) => t === tool && k !== 'v')?.[0] ?? '';
+  const keys = Object.entries(TOOL_KEYS).filter(([, t]) => t === tool).map(([k]) => k);
+  return keys.find((k) => /^[0-9]$/.test(k)) ?? keys[0]?.toUpperCase() ?? '';
 }
 
 /** Arrow key to a direction on the floor. Y grows upward, the way the canvas draws it. */

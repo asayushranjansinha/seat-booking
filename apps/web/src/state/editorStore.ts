@@ -57,6 +57,14 @@ export type Tool =
    * trips over.
    */
   | 'MARQUEE'
+  /**
+   * Dragging the view rather than anything in it.
+   *
+   * <p>Space already does this, and space is faster once you know it. A tool exists
+   * because a button is the only version of a shortcut someone can find without being
+   * told it is there.
+   */
+  | 'HAND'
   | 'ROOM_RECT'
   | 'ROOM_CIRCLE'
   | 'ROOM_POLY'

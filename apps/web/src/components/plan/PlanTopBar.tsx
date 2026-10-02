@@ -1,8 +1,8 @@
 'use client';
 
 import {
-  Box, BoxSelect, Check, ClipboardPaste, CloudUpload, Copy, CopyPlus, Loader2, Magnet,
-  Maximize, Redo2, Square, Trash2, Undo2,
+  Box, Boxes, Check, ClipboardPaste, CloudUpload, Copy, CopyPlus, Loader2, Magnet, Map,
+  Maximize, Redo2, Trash2, Undo2,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -125,7 +125,7 @@ export function PlanTopBar({
               keys={['Cmd', 'A']}
               onClick={selectAll}
             >
-              <BoxSelect className="size-4" />
+              <Boxes className="size-4" />
             </IconButton>
             <IconButton
               label="Copy"
@@ -182,7 +182,7 @@ export function PlanTopBar({
           onClick={() => setView(view === '2D' ? '3D' : '2D')}
           active={view === '3D'}
         >
-          {view === '2D' ? <Box className="size-4" /> : <Square className="size-4" />}
+          {view === '2D' ? <Box className="size-4" /> : <Map className="size-4" />}
         </IconButton>
 
         {!canEdit && (scene || noLayout) && canStart && (

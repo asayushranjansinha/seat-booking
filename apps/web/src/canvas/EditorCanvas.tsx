@@ -261,6 +261,7 @@ export function EditorCanvas() {
 
     /** What the pointer is over right now, expressed as a CSS cursor. */
     const hoverCursor = (state: ReturnType<typeof useEditorStore.getState>): string => {
+      if (state.tool === 'HAND') return 'grab';
       if (state.mode === 'PLAN' && state.tool !== 'SELECT') {
         return state.editable ? 'crosshair' : 'not-allowed';
       }
@@ -377,10 +378,11 @@ export function EditorCanvas() {
       if (!s) return;
       const world = toWorld(event);
 
-      // Space held, or the middle button: pan. Checked before anything else because
-      // moving the view is not editing — it has to work from inside any tool, over any
-      // object, on a published layout, without first putting something down.
-      if ((spaceHeld || event.button === 1) && state.view === '2D') {
+      // The hand tool, space held, or the middle button: pan. Checked before anything
+      // else because moving the view is not editing — it has to work from inside any
+      // tool, over any object, on a published layout, without first putting something
+      // down.
+      if ((spaceHeld || event.button === 1 || state.tool === 'HAND') && state.view === '2D') {
         dragRef.current = { mode: 'pan', lastClientX: event.clientX, lastClientY: event.clientY };
         renderer.domElement.style.cursor = 'grabbing';
         renderer.domElement.setPointerCapture(event.pointerId);
@@ -606,7 +608,8 @@ export function EditorCanvas() {
 
       if (drag.mode === 'pan') {
         dragRef.current = null;
-        renderer.domElement.style.cursor = spaceHeld ? 'grab' : 'default';
+        renderer.domElement.style.cursor =
+          spaceHeld || useEditorStore.getState().tool === 'HAND' ? 'grab' : 'default';
         renderer.domElement.releasePointerCapture?.(event.pointerId);
         return;
       }

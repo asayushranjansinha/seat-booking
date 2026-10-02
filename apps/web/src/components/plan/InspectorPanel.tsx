@@ -1,8 +1,8 @@
 'use client';
 
 import {
-  AlignHorizontalDistributeCenter, AlignVerticalSpaceAround, Armchair, BoxSelect, Building2,
-  Info, LayoutGrid, Loader2,
+  AlignHorizontalDistributeCenter, AlignVerticalSpaceAround, Armchair, Building2, Frame,
+  Grid3x3, Group, Info, LayoutGrid, Loader2,
   PencilRuler, Pin,
   PinOff, Table2, Trash2,
 } from 'lucide-react';
@@ -202,7 +202,7 @@ function GroupSelection({ canEdit }: { canEdit: boolean }) {
 
   return (
     <Shell
-      icon={<BoxSelect className="size-4" />}
+      icon={<Group className="size-4" />}
       title={`${selection.length} selected`}
       subtitle={parts
         .filter(([n]) => n > 0)
@@ -352,7 +352,7 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
 
   return (
     <Shell
-      icon={<LayoutGrid className="size-4" />}
+      icon={<Frame className="size-4" />}
       title={room.name}
       subtitle="Room"
       locked={!canEdit}
@@ -561,7 +561,7 @@ function ArrangeButton({ roomId, disabled }: { roomId: string; disabled: boolean
 
   return (
     <Button variant="outline" className="w-full" disabled={disabled} onClick={run}>
-      <AlignHorizontalDistributeCenter className="size-4" />
+      <Grid3x3 className="size-4" />
       Arrange tables evenly
     </Button>
   );
