@@ -405,12 +405,15 @@ function ArrangeButton({ roomId, disabled }: { roomId: string; disabled: boolean
       const worst = crowded[0]!;
       toast.warning('Arranged, but it is tight', {
         description:
-          `${worst.zone} holds ${worst.tables} tables and has comfortable room for about ` +
-          `${worst.fits}. Make the room bigger, or use fewer or smaller tables.`,
+          `${worst.zone} holds ${worst.tables} tables and has comfortable room for ` +
+          `${worst.fits === 1 ? 'about one' : `about ${worst.fits}`}. Make the room ` +
+          'bigger, or use fewer or smaller tables.',
       });
     } else {
       toast.success('Tables arranged', {
-        description: `${moves.length} tables evenly spaced, chairs re-placed around them.`,
+        description: moves.length === 1
+          ? 'One table centred in its zone, chairs re-placed around it.'
+          : `${moves.length} tables evenly spaced, chairs re-placed around them.`,
       });
     }
   };

@@ -120,6 +120,131 @@ function footprint(scene: SceneJson, tableId: string, shape: ShapeJson, rot: num
   };
 }
 
+/** Do two segments cross? Used to prove a rectangle never leaves the room's outline. */
+function segmentsCross(
+  a1: { x: number; y: number }, a2: { x: number; y: number },
+  b1: { x: number; y: number }, b2: { x: number; y: number },
+): boolean {
+  const d = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) =>
+    (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = d(b1, b2, a1);
+  const d2 = d(b1, b2, a2);
+  const d3 = d(a1, a2, b1);
+  const d4 = d(a1, a2, b2);
+  return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+}
+
+/**
+ * Is this rectangle wholly inside the outline?
+ *
+ * <p>Corners alone are not enough: in an L-shaped room a rectangle can have all four
+ * corners inside and still span the missing bite out of the middle. So the outline must
+ * also not cross any of its edges.
+ */
+function rectInsideRing(ring: ReadonlyArray<{ x: number; y: number }>, box: Box): boolean {
+  // Tested a hair inside. A rectangular room's usable area IS its outline, so the corners
+  // land exactly ON the ring, where a crossing count is a coin toss and a shared edge
+  // counts as an intersection. Without this the commonest room in the product loses a
+  // strip of itself and every table sits slightly off centre.
+  const EPS = 1e-7;
+  const corners = [
+    { x: box.minX + EPS, y: box.minY + EPS }, { x: box.maxX - EPS, y: box.minY + EPS },
+    { x: box.maxX - EPS, y: box.maxY - EPS }, { x: box.minX + EPS, y: box.maxY - EPS },
+  ];
+  if (!corners.every((c) => pointInRing(ring, c))) return false;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i]!;
+    const b = ring[(i + 1) % ring.length]!;
+    for (let c = 0; c < 4; c++) {
+      if (segmentsCross(a, b, corners[c]!, corners[(c + 1) % 4]!)) return false;
+    }
+  }
+  return true;
+}
+
+/** Largest all-true axis-aligned rectangle in a boolean grid, by the usual histogram scan. */
+function largestTrueRect(grid: boolean[][], cols: number, rows: number) {
+  const heights = new Array<number>(cols).fill(0);
+  let best = { area: 0, left: 0, right: -1, top: 0, bottom: -1 };
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) heights[c] = grid[r]![c] ? heights[c]! + 1 : 0;
+    const stack: number[] = [];
+    for (let c = 0; c <= cols; c++) {
+      const h = c === cols ? 0 : heights[c]!;
+      while (stack.length > 0 && heights[stack[stack.length - 1]!]! >= h) {
+        const top = stack.pop()!;
+        const left = stack.length === 0 ? 0 : stack[stack.length - 1]! + 1;
+        const area = heights[top]! * (c - left);
+        if (area > best.area) {
+          best = { area, left, right: c - 1, top: r - heights[top]! + 1, bottom: r };
+        }
+      }
+      stack.push(c);
+    }
+  }
+  return best;
+}
+
+/**
+ * The part of a zone a grid of tables can actually use.
+ *
+ * <p>The bounding box is the obvious answer and the wrong one. An L-shaped room's box
+ * includes the bite taken out of its corner, and a round room's box includes four corners
+ * that are solidly outside the wall — so the arrangement puts tables where there is no
+ * floor. (That is exactly what it did: a single table in an L-shaped room landed in the
+ * notch, because the notch is where the middle of the box is.)
+ *
+ * <p>So: find the largest rectangle that fits inside the outline, by marking a coarse grid
+ * and taking the biggest solid block of it, then push each side back out to the true
+ * boundary wherever that is still inside. The push-out matters — without it a plain
+ * rectangular room would lose up to a cell of width to the discretisation and the tables
+ * would sit very slightly off-centre forever.
+ */
+function usableArea(ring: ReadonlyArray<{ x: number; y: number }>): Box {
+  const box = boundsOf(ring);
+  if (rectInsideRing(ring, box)) return box; // the common case: a rectangular room
+
+  const STEP = 0.2;
+  const MAX = 160;
+  const cols = Math.min(MAX, Math.max(1, Math.ceil(width(box) / STEP)));
+  const rows = Math.min(MAX, Math.max(1, Math.ceil(height(box) / STEP)));
+  const cw = width(box) / cols;
+  const ch = height(box) / rows;
+
+  const grid: boolean[][] = [];
+  for (let r = 0; r < rows; r++) {
+    const row: boolean[] = [];
+    for (let c = 0; c < cols; c++) {
+      // Rows run down the room, so row 0 is the top one.
+      const cell = {
+        minX: box.minX + c * cw,
+        maxX: box.minX + (c + 1) * cw,
+        minY: box.maxY - (r + 1) * ch,
+        maxY: box.maxY - r * ch,
+      };
+      row.push(rectInsideRing(ring, cell));
+    }
+    grid.push(row);
+  }
+
+  const best = largestTrueRect(grid, cols, rows);
+  if (best.area === 0) return box; // nothing fits; let the caller report it as crowded
+
+  let found: Box = {
+    minX: box.minX + best.left * cw,
+    maxX: box.minX + (best.right + 1) * cw,
+    minY: box.maxY - (best.bottom + 1) * ch,
+    maxY: box.maxY - best.top * ch,
+  };
+  // Recover the discretisation loss one side at a time, keeping each push only if the
+  // rectangle is still wholly inside.
+  for (const side of ['minX', 'maxX', 'minY', 'maxY'] as const) {
+    const stretched = { ...found, [side]: box[side] };
+    if (rectInsideRing(ring, stretched)) found = stretched;
+  }
+  return found;
+}
+
 /**
  * How many columns to use.
  *
@@ -200,7 +325,8 @@ export function arrangeTablesEvenly(scene: SceneJson, roomId: string): ArrangeRe
   for (const { zone, tables: group } of groups) {
     if (group.length === 0) continue;
 
-    const bounds = boundsOf(zone.ring);
+    // Not boundsOf(): see usableArea. A room is rarely the rectangle its extents suggest.
+    const bounds = usableArea(zone.ring);
     const prints = group.map((t) => footprint(scene, t.id, t.shape, t.transform.rot));
     // One cell size for the whole zone. Sizing each cell to its own table would space the
     // tables unequally, which is the thing being fixed.

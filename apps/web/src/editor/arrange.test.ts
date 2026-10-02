@@ -158,3 +158,98 @@ describe('arrangeTablesEvenly', () => {
     expect(arrangeTablesEvenly(scene([]), ROOM).moves).toEqual([]);
   });
 });
+
+describe('rooms that are not rectangles', () => {
+  /** Scene with one room of an arbitrary outline. */
+  function shaped(shape: SceneJson['rooms'][number]['shape'], furniture: FurnitureJson[]): SceneJson {
+    const base = scene(furniture);
+    return { ...base, rooms: [{ ...base.rooms[0]!, shape }] };
+  }
+
+  /**
+   * The L that found this. A table centred in the BOUNDING BOX of an L-shaped room lands
+   * in the bite taken out of its corner — outside the room, where there is no floor.
+   */
+  const L_SHAPE = {
+    kind: 'POLYGON' as const,
+    points: [[-6, -4], [6, -4], [6, 0], [0, 0], [0, 4], [-6, 4]] as Vec2Json[],
+  };
+
+  /** Is the point strictly inside the L? Written independently of the code under test. */
+  const insideL = (x: number, y: number) =>
+    (x >= -6 && x <= 6 && y >= -4 && y <= 0) || (x >= -6 && x <= 0 && y >= -4 && y <= 4);
+
+  it('does not put a table in the notch of an L-shaped room', () => {
+    const { moves } = arrangeTablesEvenly(shaped(L_SHAPE, [table('a', 1, 1)]), ROOM);
+    expect(moves).toHaveLength(1);
+    const { x, y } = moves[0]!;
+    expect(insideL(x, y)).toBe(true);
+    // The centre of the bounding box is (0, 0) — the inner corner. Anything that lands
+    // there has used the box rather than the room.
+    expect(Math.hypot(x, y)).toBeGreaterThan(0.5);
+  });
+
+  /** Every corner of the table's chair ring, which is what the validator checks. */
+  const ringCorners = (m: { x: number; y: number }) =>
+    [[-1.7, -1.2], [1.7, -1.2], [1.7, 1.2], [-1.7, 1.2]].map(([dx, dy]) =>
+      ({ x: m.x + dx!, y: m.y + dy! }));
+
+  it('keeps tables and chairs inside an L-shaped room when they fit', () => {
+    const { moves, crowded } = arrangeTablesEvenly(
+      shaped(L_SHAPE, [table('a', 1, 1), table('b', -1, 2)]), ROOM,
+    );
+    expect(crowded).toEqual([]);
+    expect(moves).toHaveLength(2);
+    for (const m of moves) {
+      for (const c of ringCorners(m)) expect(insideL(c.x, c.y)).toBe(true);
+    }
+  });
+
+  it('says so rather than pretending when the arms of the L are too small', () => {
+    // Four tables need 13.6 x 4.8 m of chair-inclusive space. Neither arm of this L is
+    // that big, so they cannot all be placed tidily. The arrangement still happens —
+    // leaving the room untouched and silent would be worse — but it must be reported,
+    // because the chairs will be overlapping and publishing is about to fail.
+    const tables = Array.from({ length: 4 }, (_, i) => table(`t${i}`, i - 2, i - 1));
+    const { moves, crowded } = arrangeTablesEvenly(shaped(L_SHAPE, tables), ROOM);
+    expect(moves).toHaveLength(4);
+    expect(crowded).toHaveLength(1);
+    expect(crowded[0]!.tables).toBe(4);
+    expect(crowded[0]!.fits).toBeLessThan(4);
+    // Whatever else is true, no TABLE is put somewhere there is no floor.
+    for (const m of moves) expect(insideL(m.x, m.y)).toBe(true);
+  });
+
+  /**
+   * A room with a bite out of the middle of a wall — a lightwell, a lift core, a stage
+   * recess. It is the shape that proves the containment test needs more than corners: a
+   * rectangle spanning the two prongs of the U has all four corners on solid floor and its
+   * top edge straight through the gap. An L never catches this, because an L's missing
+   * piece is a corner and always swallows one.
+   */
+  const U_SHAPE = {
+    kind: 'POLYGON' as const,
+    points: [[-6, -4], [6, -4], [6, 4], [2, 4], [2, 0], [-2, 0], [-2, 4], [-6, 4]] as Vec2Json[],
+  };
+
+  const insideU = (x: number, y: number) =>
+    x >= -6 && x <= 6 && y >= -4 && y <= 4 && !(x > -2 && x < 2 && y > 0);
+
+  it('does not span the gap of a U-shaped room', () => {
+    const { moves } = arrangeTablesEvenly(shaped(U_SHAPE, [table('a', 0, 1)]), ROOM);
+    expect(moves).toHaveLength(1);
+    for (const c of ringCorners(moves[0]!)) expect(insideU(c.x, c.y)).toBe(true);
+  });
+
+  it('keeps tables inside a round room, not in the corners of its box', () => {
+    const r = 6;
+    const { moves } = arrangeTablesEvenly(
+      shaped({ kind: 'CIRCLE', r }, [table('a', 0, 0), table('b', 1, 1)]), ROOM,
+    );
+    for (const m of moves) {
+      for (const [dx, dy] of [[-1.7, -1.2], [1.7, -1.2], [1.7, 1.2], [-1.7, 1.2]]) {
+        expect(Math.hypot(m.x + dx!, m.y + dy!)).toBeLessThanOrEqual(r + 1e-6);
+      }
+    }
+  });
+});
