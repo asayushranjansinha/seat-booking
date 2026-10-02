@@ -46,12 +46,13 @@ export function InspectorPanel({
 }
 
 function Shell({
-  icon, title, subtitle, onDelete, children,
+  icon, title, subtitle, onDelete, locked, children,
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle?: string;
   onDelete?: () => void;
+  locked?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -74,7 +75,19 @@ function Shell({
           </Button>
         )}
       </div>
-      <div className="flex-1 space-y-5 overflow-y-auto p-4">{children}</div>
+      <div className="flex-1 space-y-5 overflow-y-auto p-4">
+        {locked && (
+          // Without this the fields are simply greyed out, which reads as "broken" rather
+          // than "published". The canvas refuses to drag for the same reason, and that
+          // refusal is silent, so the explanation has to be somewhere.
+          <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+            This layout is published and cannot be changed. Choose{' '}
+            <span className="font-medium text-foreground">Edit layout</span> to start a
+            draft — nobody sees a draft until you publish it.
+          </p>
+        )}
+        {children}
+      </div>
     </div>
   );
 }
@@ -176,6 +189,7 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
   const setRoomRate = useEditorStore((s) => s.setRoomRate);
   const resizeShape = useEditorStore((s) => s.resizeShape);
   const rotateEntity = useEditorStore((s) => s.rotateEntity);
+  const moveEntity = useEditorStore((s) => s.moveEntity);
   const deleteSelected = useEditorStore((s) => s.deleteSelected);
 
   const room = scene.rooms.find((r) => r.id === selection.id);
@@ -186,11 +200,19 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
       icon={<LayoutGrid className="size-4" />}
       title={room.name}
       subtitle="Room"
+      locked={!canEdit}
       onDelete={canEdit ? deleteSelected : undefined}
     >
       <Field label="Name">
         <Input value={room.name} disabled={!canEdit} onChange={(e) => renameRoom(room.id, e.target.value)} />
       </Field>
+
+      <PositionFields
+        x={room.transform.x}
+        y={room.transform.y}
+        disabled={!canEdit}
+        onChange={(x, y) => moveEntity(selection, x, y, false)}
+      />
 
       <ShapeFields shape={room.shape} disabled={!canEdit} onChange={(s) => resizeShape(selection, s)} />
 
@@ -244,6 +266,7 @@ function TableInspector({ canEdit }: { canEdit: boolean }) {
   const selection = useEditorStore((s) => s.selection)!;
   const resizeShape = useEditorStore((s) => s.resizeShape);
   const rotateEntity = useEditorStore((s) => s.rotateEntity);
+  const moveEntity = useEditorStore((s) => s.moveEntity);
   const setTableRule = useEditorStore((s) => s.setTableRule);
   const deleteSelected = useEditorStore((s) => s.deleteSelected);
 
@@ -258,8 +281,16 @@ function TableInspector({ canEdit }: { canEdit: boolean }) {
       icon={<Table2 className="size-4" />}
       title={table.label ?? 'Table'}
       subtitle={`${seats.length} seats${pinned ? ` · ${pinned} pinned` : ''}`}
+      locked={!canEdit}
       onDelete={canEdit ? deleteSelected : undefined}
     >
+      <PositionFields
+        x={table.transform.x}
+        y={table.transform.y}
+        disabled={!canEdit}
+        onChange={(x, y) => moveEntity(selection, x, y, false)}
+      />
+
       <ShapeFields shape={table.shape} disabled={!canEdit} onChange={(s) => resizeShape(selection, s)} />
 
       <RotationField
@@ -319,6 +350,41 @@ function SeatInspector({ canEdit }: { canEdit: boolean }) {
         </p>
       </div>
     </Shell>
+  );
+}
+
+/**
+ * Where the thing sits in its parent's frame: the floor for a room, the room for a table,
+ * the table for a seat.
+ *
+ * <p>Dragging is the quick way to move something and the way almost everyone will. It is
+ * also hopeless for "exactly two metres off that wall", and it is invisible — a canvas
+ * gives no sign that a shape is draggable at all. These two boxes answer both complaints,
+ * and they are the only place in the editor that states a position as a number you can
+ * read back to someone.
+ */
+function PositionFields({
+  x, y, disabled, onChange,
+}: {
+  x: number;
+  y: number;
+  disabled: boolean;
+  onChange: (x: number, y: number) => void;
+}) {
+  // Rounded for DISPLAY only. The stored value keeps its precision; showing 4.000000001
+  // in a box someone is about to retype is just noise.
+  const show = (v: number) => Math.round(v * 1000) / 1000;
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Field label="X (m)">
+        <Input type="number" step="0.25" disabled={disabled} value={show(x)}
+          onChange={(e) => onChange(num(e.target.value, x), y)} />
+      </Field>
+      <Field label="Y (m)">
+        <Input type="number" step="0.25" disabled={disabled} value={show(y)}
+          onChange={(e) => onChange(x, num(e.target.value, y))} />
+      </Field>
+    </div>
   );
 }
 

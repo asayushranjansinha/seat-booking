@@ -66,6 +66,13 @@ interface EditorState extends UndoableState {
   dirty: boolean;
   /** True while a pointer drag is in flight, so history records one entry, not sixty. */
   dragging: boolean;
+  /**
+   * Whether the scene on screen can actually be changed: a DRAFT, in PLAN mode, by an
+   * admin. The canvas has to know. Without it the published layout drags around under
+   * the pointer and springs back on the next load, because autosave is gated on the very
+   * condition the canvas never checked.
+   */
+  editable: boolean;
   drawing: Drawing;
   /** World position of the pointer, for the live dimension readout. */
   cursor: { x: number; y: number } | null;
@@ -84,6 +91,7 @@ interface EditorState extends UndoableState {
   markSaved: (scene: SceneJson, etag: string | null) => void;
   setSelection: (selection: Selection) => void;
   setTool: (tool: Tool) => void;
+  setEditable: (editable: boolean) => void;
   setView: (view: '2D' | '3D') => void;
   setViolations: (violations: ViolationJson[]) => void;
   toggleSnap: () => void;
@@ -91,7 +99,16 @@ interface EditorState extends UndoableState {
   beginDrag: () => void;
   endDrag: () => void;
 
-  moveEntity: (selection: NonNullable<Selection>, x: number, y: number) => void;
+  /**
+   * Move something in its parent's frame.
+   *
+   * <p>{@code snapToGrid} is what a drag wants and what a typed number does not: someone
+   * who types 4.3 means 4.3, and silently rounding it to the grid makes the box fight
+   * back every time they use it.
+   */
+  moveEntity: (
+    selection: NonNullable<Selection>, x: number, y: number, snapToGrid?: boolean,
+  ) => void;
   rotateEntity: (selection: NonNullable<Selection>, rot: number) => void;
   resizeShape: (selection: NonNullable<Selection>, shape: ShapeJson) => void;
   renameRoom: (roomId: string, name: string) => void;
@@ -272,6 +289,7 @@ export const useEditorStore = create<EditorState>()(
       etag: null,
       selection: null,
       tool: 'SELECT',
+      editable: false,
       violations: [],
       view: '2D',
       gridSnap: 0.25,
@@ -295,6 +313,7 @@ export const useEditorStore = create<EditorState>()(
       markSaved: (scene, etag) => set({ scene, etag, dirty: false }),
       setSelection: (selection) => set({ selection }),
       setTool: (tool) => set({ tool }),
+      setEditable: (editable) => set({ editable }),
       setView: (view) => set({ view }),
       setViolations: (violations) => set({ violations }),
       toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
@@ -305,10 +324,11 @@ export const useEditorStore = create<EditorState>()(
       },
       endDrag: () => set({ dragging: false }),
 
-      moveEntity: (selection, x, y) =>
+      moveEntity: (selection, x, y, snapToGrid = true) =>
         set((state) => {
           if (!state.scene) return state;
-          const snap = (v: number) => snapValue(v, state.gridSnap, state.snapEnabled);
+          const snap = (v: number) =>
+            snapToGrid ? snapValue(v, state.gridSnap, state.snapEnabled) : v;
           const move = (t: TransformJson): TransformJson => ({ ...t, x: snap(x), y: snap(y) });
           let scene = state.scene;
           if (selection.type === 'room') {

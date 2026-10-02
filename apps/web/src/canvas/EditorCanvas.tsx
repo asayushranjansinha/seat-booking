@@ -138,6 +138,23 @@ export function EditorCanvas() {
       return new THREE.Vector2(hit.x, hit.y);
     };
 
+    /** What the pointer is over right now, expressed as a CSS cursor. */
+    const hoverCursor = (state: ReturnType<typeof useEditorStore.getState>): string => {
+      if (state.mode === 'PLAN' && state.tool !== 'SELECT') {
+        return state.editable ? 'crosshair' : 'not-allowed';
+      }
+      if (!graph) return 'default';
+      graph.updateMatrixWorld(true);
+      const hits = raycaster.intersectObjects(graph.children, true);
+      const overHandle = hits.some((h) => (h.object.userData as { handle?: HandleData }).handle);
+      const overEntity = hits.some((h) => (h.object.userData as { pick?: PickData }).pick);
+      if (state.mode === 'BOOK') return overEntity ? 'pointer' : 'default';
+      if (!overHandle && !overEntity) return 'default';
+      // Selecting is allowed on a published layout even though moving is not, so the
+      // cursor promises a click, not a drag.
+      return state.editable ? 'grab' : 'pointer';
+    };
+
     const parentWorld = (s: SceneJson, sel: NonNullable<Selection>): TransformJson => {
       if (sel.type === 'room') return IDENTITY;
       if (sel.type === 'furniture') {
@@ -191,7 +208,7 @@ export function EditorCanvas() {
       if (!s) return;
       const world = toWorld(event);
 
-      if (state.mode === 'PLAN' && state.tool !== 'SELECT') {
+      if (state.mode === 'PLAN' && state.tool !== 'SELECT' && state.editable) {
         switch (state.tool) {
           case 'ROOM_RECT':
             state.addRoom({ kind: 'RECT', w: 8, h: 6 }, world);
@@ -270,7 +287,7 @@ export function EditorCanvas() {
         ? raycaster.intersectObjects(graph.children, true)
             .find((h) => (h.object.userData as { handle?: HandleData }).handle)
         : undefined;
-      if (gripHit) {
+      if (gripHit && state.editable) {
         const handle = (gripHit.object.userData as { handle: HandleData }).handle;
         dragRef.current = { mode: 'handle', handle, parent: parentWorld(s, handle.selection) };
         state.beginDrag();
@@ -303,6 +320,10 @@ export function EditorCanvas() {
       if (state.mode === 'BOOK') {
         return; // booking selects a seat; it never moves one
       }
+      // A published layout is a record of what people are booking against, not a
+      // scratchpad. Letting it drag would move it on screen and then lose the move,
+      // because the save is gated on exactly this condition.
+      if (!state.editable) return;
 
       const local = toLocal(s, pick.selection, world);
       dragRef.current = {
@@ -322,11 +343,16 @@ export function EditorCanvas() {
       const drag = dragRef.current;
 
       if (!drag) {
+        // Nothing on a canvas announces itself as draggable the way a button announces
+        // itself as clickable. The cursor is the only affordance there is, so it has to
+        // say which of the three things is true here: draw, grab, or look.
+        renderer.domElement.style.cursor = hoverCursor(state);
         // Only track the cursor while a stroke is open; otherwise every mouse move would
         // rebuild the scene graph for nothing.
         if (state.drawing) state.setCursor({ x: world.x, y: world.y });
         return;
       }
+      renderer.domElement.style.cursor = 'grabbing';
 
       if (drag.mode === 'handle') {
         const { handle, parent } = drag;
@@ -361,6 +387,7 @@ export function EditorCanvas() {
     const onPointerUp = (event: PointerEvent) => {
       if (!dragRef.current) return;
       dragRef.current = null;
+      renderer.domElement.style.cursor = 'grab';
       guidesRef.current = [];
       // Ending the drag re-arms history, so the whole gesture is ONE undo step rather
       // than one per pointer move.

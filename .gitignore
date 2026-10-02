@@ -13,3 +13,4 @@ target/
 coverage/
 test-plans/
 .next-check/
+apps/web/tsconfig.tsbuildinfo

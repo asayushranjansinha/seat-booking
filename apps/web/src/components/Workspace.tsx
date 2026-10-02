@@ -24,6 +24,25 @@ function describe(e: unknown): string | undefined {
   return undefined;
 }
 
+/** Arrow key to a direction on the floor. Y grows upward, the way the canvas draws it. */
+const NUDGES: Record<string, [number, number] | undefined> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, 1],
+  ArrowDown: [0, -1],
+};
+
+/** Where the selected thing currently sits, in its own parent's frame. */
+function positionOf(
+  scene: ReturnType<typeof useEditorStore.getState>['scene'],
+  sel: NonNullable<ReturnType<typeof useEditorStore.getState>['selection']>,
+): { x: number; y: number } | null {
+  if (!scene) return null;
+  if (sel.type === 'room') return scene.rooms.find((r) => r.id === sel.id)?.transform ?? null;
+  if (sel.type === 'furniture') return scene.furniture.find((f) => f.id === sel.id)?.transform ?? null;
+  return scene.seats.find((s) => s.id === sel.id)?.localTransform ?? null;
+}
+
 export function Workspace({ session, onSignOut }: { session: SessionJson; onSignOut: () => void }) {
   const scene = useEditorStore((s) => s.scene);
   const etag = useEditorStore((s) => s.etag);
@@ -49,6 +68,11 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
 
   const isAdmin = session.user.role === 'ADMIN';
   const canEdit = mode === 'PLAN' && scene?.status === 'DRAFT' && isAdmin;
+
+  // The canvas is driven imperatively and reads the store directly, so the one condition
+  // that decides whether a gesture is allowed has to live there too.
+  const setEditable = useEditorStore((s) => s.setEditable);
+  useEffect(() => setEditable(!!canEdit), [canEdit, setEditable]);
 
   useEffect(() => {
     if (!isAdmin) setMode('BOOK');
@@ -215,6 +239,21 @@ export function Workspace({ session, onSignOut }: { session: SessionJson; onSign
         deleteSelected();
       } else if (e.key.toLowerCase() === 'v') {
         setTool('SELECT');
+      } else if (canEdit && NUDGES[e.key]) {
+        // A drag cannot reliably move something by one grid square, and on a trackpad it
+        // often cannot move it by a small amount at all. Arrows can.
+        e.preventDefault();
+        const store = useEditorStore.getState();
+        const sel = store.selection;
+        if (!sel) return;
+        const here = positionOf(store.scene, sel);
+        if (!here) return;
+        const [dx, dy] = NUDGES[e.key]!;
+        const step = e.shiftKey ? store.gridSnap * 4 : store.gridSnap;
+        // One history entry for the whole press-and-hold, the same as one drag.
+        store.beginDrag();
+        store.moveEntity(sel, here.x + dx * step, here.y + dy * step, false);
+        store.endDrag();
       }
     };
     window.addEventListener('keydown', onKey);

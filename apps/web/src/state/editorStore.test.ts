@@ -142,3 +142,44 @@ describe('editor history', () => {
     expect(temporal().pastStates.length).toBe(before);
   });
 });
+
+/**
+ * Typing a position must mean the position you typed.
+ *
+ * <p>A browser check of "move the room somewhere else" found two separate failures. The
+ * canvas moved entities on a PUBLISHED layout, where the save is gated off, so the room
+ * slid under the pointer and sprang back on the next load. And there was no way to move
+ * anything except by dragging — no coordinates, no arrow keys — which is unusable for
+ * "two metres off that wall" and invisible to anyone who had not already guessed the
+ * canvas was draggable.
+ */
+describe('moving things', () => {
+  beforeEach(() => {
+    useEditorStore.getState().loadScene(scene(), 'W/"1"');
+  });
+
+  it('snaps a drag to the grid', () => {
+    const s = useEditorStore.getState();
+    s.moveEntity({ type: 'room', id: ROOM_ID }, 4.31, 2.17);
+    const room = useEditorStore.getState().scene!.rooms[0]!;
+    expect(room.transform.x).toBe(4.25);
+    expect(room.transform.y).toBe(2.25);
+  });
+
+  it('keeps a typed position exactly, grid or no grid', () => {
+    const s = useEditorStore.getState();
+    expect(useEditorStore.getState().snapEnabled).toBe(true);
+    s.moveEntity({ type: 'room', id: ROOM_ID }, 4.31, 2.17, false);
+    const room = useEditorStore.getState().scene!.rooms[0]!;
+    expect(room.transform.x).toBe(4.31);
+    expect(room.transform.y).toBe(2.17);
+  });
+
+  it('starts out not editable, so a published layout cannot be dragged', () => {
+    // The canvas reads this flag and refuses every gesture while it is false. Defaulting
+    // it to true would re-open exactly the bug this covers.
+    expect(useEditorStore.getState().editable).toBe(false);
+    useEditorStore.getState().setEditable(true);
+    expect(useEditorStore.getState().editable).toBe(true);
+  });
+});
