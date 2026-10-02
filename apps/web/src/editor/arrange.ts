@@ -25,11 +25,11 @@
  * server already knows how to store and validate. That is why it does not need a
  * cross-language twin the way the placement engine does.
  */
-import { pointInRing, ringFromJson, shapeFromJson, tessellate } from '@seat-booking/geometry';
+import { pointInRing, ringFromJson } from '@seat-booking/geometry';
+import {
+  boundsOf, height, ringOf, rotatedBounds, width, type Box,
+} from '@/editor/extent';
 import type { RoomJson, SceneJson, ShapeJson } from '@/api/types';
-
-/** Matches the canvas, so a table never lands somewhere the drawn outline disagrees with. */
-const TOLERANCE = 1e-3;
 
 export interface Move {
   tableId: string;
@@ -49,43 +49,6 @@ export interface ArrangeResult {
   crowded: { zone: string; tables: number; fits: number }[];
 }
 
-interface Box {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-}
-
-const width = (b: Box) => b.maxX - b.minX;
-const height = (b: Box) => b.maxY - b.minY;
-
-function boundsOf(points: ReadonlyArray<{ x: number; y: number }>): Box {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of points) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-  }
-  return { minX, minY, maxX, maxY };
-}
-
-const ringOf = (shape: ShapeJson) => tessellate(shapeFromJson(shape), TOLERANCE);
-
-/**
- * How much room a shape takes once turned.
- *
- * <p>A 2.4 × 1.2 table laid sideways needs 1.2 × 2.4. Using the unrotated size would
- * space a row of sideways tables as though they were narrow, and they would collide.
- */
-function rotatedBounds(shape: ShapeJson, rot: number): Box {
-  const cos = Math.cos(rot);
-  const sin = Math.sin(rot);
-  return boundsOf(ringOf(shape).map((p) => ({
-    x: p.x * cos - p.y * sin,
-    y: p.x * sin + p.y * cos,
-  })));
-}
 
 /**
  * The space one table occupies, chairs included, as a half-width and half-height.

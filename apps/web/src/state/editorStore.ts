@@ -10,6 +10,8 @@ import {
 } from '@seat-booking/geometry';
 import { arrangeTablesEvenly, type ArrangeResult } from '@/editor/arrange';
 import { extract, nextSeatPrefix, paste as pasteClip, type Clip } from '@/editor/clipboard';
+import { alignAcross, spaceEvenly, type Shift } from '@/editor/distribute';
+import { rotateDelta } from '@/editor/extent';
 import { pointer } from '@/editor/pointer';
 import type {
   FurnitureJson,
@@ -129,6 +131,15 @@ interface EditorState extends UndoableState {
    * to a snapped absolute position.
    */
   moveSelectionBy: (dx: number, dy: number) => void;
+  /**
+   * Equalise the gaps between the selected things, leaving the two at the ends put.
+   *
+   * <p>Returns how many moved, so the caller can say "already evenly spaced" instead of
+   * flashing a success message for nothing.
+   */
+  spaceSelectionEvenly: () => number;
+  /** Line the selection up across its run. Returns how many moved. */
+  alignSelection: () => number;
   setTool: (tool: Tool) => void;
   setEditable: (editable: boolean) => void;
   setView: (view: '2D' | '3D') => void;
@@ -211,6 +222,47 @@ const uuid = (): string => crypto.randomUUID();
 const SAME_CORNER = 0.08;
 
 /**
+ * Move each thing by its own world delta.
+ *
+ * <p>The deltas arrive in world metres, but every transform is stored in its PARENT's
+ * frame — a table inside a room, a seat on a table — so each one has to be turned into
+ * that frame before it is added. Shared by spacing and aligning so the two cannot
+ * disagree about what "move this 2 m left" means.
+ */
+function applyShifts(
+  set: (fn: (state: EditorState) => EditorState) => void,
+  get: () => EditorState,
+  plan: (scene: SceneJson, selection: readonly SelectionItem[]) => Shift[],
+): number {
+  const state = get();
+  if (!state.scene) return 0;
+  const shifts = plan(state.scene, state.selection);
+  if (shifts.length === 0) return 0;
+
+  set((current) => {
+    if (!current.scene) return current;
+    let scene = current.scene;
+    for (const { item, dx, dy } of shifts) {
+      if (item.type === 'room') {
+        scene = updateRoom(scene, item.id, (r) => ({
+          ...r, transform: { ...r.transform, x: r.transform.x + dx, y: r.transform.y + dy },
+        }));
+      } else if (item.type === 'furniture') {
+        const table = scene.furniture.find((f) => f.id === item.id);
+        const room = scene.rooms.find((r) => r.id === table?.roomId);
+        const local = room ? rotateDelta(dx, dy, -room.transform.rot) : { x: dx, y: dy };
+        scene = updateFurniture(scene, item.id, (f) => ({
+          ...f,
+          transform: { ...f.transform, x: f.transform.x + local.x, y: f.transform.y + local.y },
+        }));
+      }
+    }
+    return { ...current, scene, dirty: true };
+  });
+  return shifts.length;
+}
+
+/**
  * What was last copied.
  *
  * <p>Module-level rather than store state on purpose: a clipboard is not part of the
@@ -219,13 +271,6 @@ const SAME_CORNER = 0.08;
  * clipboard has ever behaved.
  */
 let clipboard: Clip | null = null;
-
-/** Turn a world delta into a frame rotated by `angle`. */
-function rotateDelta(dx: number, dy: number, angle: number): { x: number; y: number } {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
-}
 
 /** Whether the current drag gesture has already contributed its one history entry. */
 let dragHistoryRecorded = false;
@@ -503,6 +548,9 @@ export const useEditorStore = create<EditorState>()(
           for (const tableId of regenerateFor) scene = regenerate(scene, tableId);
           return { ...state, scene, dirty: true };
         }),
+
+      spaceSelectionEvenly: () => applyShifts(set, get, spaceEvenly),
+      alignSelection: () => applyShifts(set, get, alignAcross),
 
       rotateEntity: (selection, rot) =>
         set((state) => {

@@ -1,7 +1,8 @@
 'use client';
 
 import {
-  AlignHorizontalDistributeCenter, Armchair, BoxSelect, Building2, Info, LayoutGrid, Loader2,
+  AlignHorizontalDistributeCenter, AlignVerticalSpaceAround, Armchair, BoxSelect, Building2,
+  Info, LayoutGrid, Loader2,
   PencilRuler, Pin,
   PinOff, Table2, Trash2,
 } from 'lucide-react';
@@ -186,6 +187,11 @@ function NoEstate({ canStart, onAdd }: { canStart: boolean; onAdd: () => void })
 function GroupSelection({ canEdit }: { canEdit: boolean }) {
   const selection = useEditorStore((s) => s.selection);
   const deleteSelected = useEditorStore((s) => s.deleteSelected);
+  const spaceEvenly = useEditorStore((s) => s.spaceSelectionEvenly);
+  const align = useEditorStore((s) => s.alignSelection);
+  // Seats sit where their table's rule puts them, so they do not take part and must not
+  // be counted when deciding whether there is enough here to space.
+  const tables = selection.filter((x) => x.type !== 'seat').length;
 
   const count = (type: string) => selection.filter((x) => x.type === type).length;
   const parts = [
@@ -205,6 +211,44 @@ function GroupSelection({ canEdit }: { canEdit: boolean }) {
       locked={!canEdit}
       onDelete={canEdit ? deleteSelected : undefined}
     >
+      <div className="space-y-2">
+        <Button variant="outline" className="w-full justify-start" disabled={!canEdit || tables < 3}
+          onClick={() => {
+            const moved = spaceEvenly();
+            toast[moved ? 'success' : 'info'](
+              moved ? 'Spaced evenly' : 'Already evenly spaced',
+              {
+                description: moved
+                  ? 'The two at the ends stayed put; the gaps between are now equal.'
+                  : 'The gaps between these are already the same.',
+              },
+            );
+          }}>
+          <AlignHorizontalDistributeCenter className="size-4" />
+          Space evenly
+        </Button>
+        <Button variant="outline" className="w-full justify-start" disabled={!canEdit || tables < 2}
+          onClick={() => {
+            const moved = align();
+            toast[moved ? 'success' : 'info'](moved ? 'Lined up' : 'Already in line', {
+              description: moved
+                ? 'Centred on the middle of the selection, so it stayed where it was.'
+                : 'These are already on one line.',
+            });
+          }}>
+          <AlignVerticalSpaceAround className="size-4" />
+          Line up
+        </Button>
+        {tables < 3 && tables >= 2 && (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Spacing needs three or more: with two there is only one gap, and nothing to
+            even it against.
+          </p>
+        )}
+      </div>
+
+      <Separator />
+
       <ul className="space-y-2.5 text-sm text-muted-foreground">
         <li>Drag any one of them and the whole group moves together.</li>
         <li>Arrow keys nudge the group by one grid square, Shift by four.</li>
