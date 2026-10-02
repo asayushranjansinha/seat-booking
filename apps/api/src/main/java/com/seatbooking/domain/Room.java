@@ -45,6 +45,15 @@ public class Room {
     @Column(name = "hourly_rate")
     private BigDecimal hourlyRate;
 
+    /**
+     * What this room is FOR, which decides who may book a seat in it.
+     *
+     * <p>A property of the space rather than of each seat: a cabin whose seats disagreed
+     * about who is allowed in would be a state nobody wants to debug.
+     */
+    @Column(nullable = false)
+    private String kind = "ROOM";
+
     protected Room() {}
 
     public Room(UUID organizationId, UUID planVersionId, String name, String shape, String transform) {
@@ -105,6 +114,14 @@ public class Room {
 
     public BigDecimal getHourlyRate() {
         return hourlyRate;
+    }
+
+    public String getKind() {
+        return kind;
+    }
+
+    public void setKind(String kind) {
+        this.kind = kind;
     }
 
     public void setHourlyRate(BigDecimal hourlyRate) {

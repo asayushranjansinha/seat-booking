@@ -181,6 +181,7 @@ interface EditorState extends UndoableState {
   resizeShape: (selection: NonNullable<Selection>, shape: ShapeJson) => void;
   renameRoom: (roomId: string, name: string) => void;
   setRoomRate: (roomId: string, rate: number | null) => void;
+  setRoomKind: (roomId: string, kind: 'ROOM' | 'CABIN') => void;
 
   setTableRule: (tableId: string, placement: PlacementJson) => void;
   regenerateSeats: (tableId: string) => void;
@@ -623,6 +624,16 @@ export const useEditorStore = create<EditorState>()(
        * which is why this field exists at all: the pricing worked, but nothing could set
        * the input it worked from.
        */
+      setRoomKind: (roomId, kind) =>
+        set((state) => {
+          if (!state.scene) return state;
+          return {
+            ...state,
+            scene: updateRoom(state.scene, roomId, (r) => ({ ...r, kind })),
+            dirty: true,
+          };
+        }),
+
       setRoomRate: (roomId, hourlyRate) =>
         set((state) =>
           state.scene

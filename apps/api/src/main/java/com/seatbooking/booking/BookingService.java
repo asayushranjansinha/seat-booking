@@ -2,6 +2,7 @@ package com.seatbooking.booking;
 
 import com.seatbooking.auth.CurrentUser;
 import com.seatbooking.domain.Booking;
+import com.seatbooking.domain.Role;
 import com.seatbooking.domain.BookingStatus;
 import com.seatbooking.repo.AppUserRepository;
 import com.seatbooking.repo.BookingRepository;
@@ -56,12 +57,12 @@ public class BookingService {
 
     /** A seat, with everything needed to price it and check it is bookable. */
     private record BookableSeat(UUID seatId, String code, UUID organizationId, UUID floorId,
-                                boolean bookable, BigDecimal rate) {}
+                                boolean bookable, BigDecimal rate, String roomKind) {}
 
     private Optional<BookableSeat> findBookableSeat(UUID seatId) {
         return jdbc.sql("""
                 SELECT s.id, s.code, s.organization_id, f.id AS floor_id, s.bookable,
-                       COALESCE(s.hourly_rate, r.hourly_rate, 0) AS rate
+                       COALESCE(s.hourly_rate, r.hourly_rate, 0) AS rate, r.kind AS room_kind
                 FROM seat s
                 JOIN room r ON r.id = s.room_id
                 JOIN floor_plan_version v ON v.id = s.plan_version_id
@@ -71,7 +72,8 @@ public class BookingService {
                 .param("seatId", seatId)
                 .query((rs, n) -> new BookableSeat(
                         rs.getObject(1, UUID.class), rs.getString(2), rs.getObject(3, UUID.class),
-                        rs.getObject(4, UUID.class), rs.getBoolean(5), rs.getBigDecimal(6)))
+                        rs.getObject(4, UUID.class), rs.getBoolean(5), rs.getBigDecimal(6),
+                        rs.getString(7)))
                 .optional();
     }
 
@@ -116,6 +118,14 @@ public class BookingService {
             throw new BookingException(HttpStatus.CONFLICT, "NOT_BOOKABLE",
                     "Seat " + seat.code() + " is not bookable.");
         }
+        // A cabin is for taking calls, and it is kept for the people whose calls cannot
+        // be taken at a desk. Enforced here rather than in the UI, because a hidden
+        // button is not a permission.
+        if ("CABIN".equals(seat.roomKind()) && caller.role() == Role.USER) {
+            throw new BookingException(HttpStatus.FORBIDDEN, "CABIN_RESTRICTED",
+                    "Seat " + seat.code() + " is in a call cabin, which only managers and "
+                    + "admins can book.");
+        }
 
         Booking booking = new Booking(seat.organizationId(), seat.seatId(), caller.id(),
                 startsAt, endsAt, Pricing.forSlot(seat.rate(), startsAt, endsAt));
@@ -124,6 +134,10 @@ public class BookingService {
             try {
                 writer.insert(booking);
                 break;
+            } catch (BookingWriter.AlreadyHoldingADeskException e) {
+                throw new BookingException(HttpStatus.CONFLICT, "ALREADY_HOLDING_A_DESK",
+                        "You already have a seat booked over part of that time. Cancel it, "
+                        + "or pick a slot that does not overlap.");
             } catch (BookingWriter.SeatTakenException e) {
                 // Definitive: the constraint refused because something overlaps. Another
                 // request won, nothing was written, and retrying cannot change that.

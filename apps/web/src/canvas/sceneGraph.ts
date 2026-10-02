@@ -27,6 +27,8 @@ export const COLORS = {
   gate: 0xf0c24a,
   emergency: 0xe0646f,
   partition: 0x8792a6,
+  cabinFill: 0x332b45,
+  cabinEdge: 0x8f7ad1,
   tableLip: 0x2f3f55,
   chairTrim: 0x2b6b4f,
   subZone: 0x2a3140,
@@ -123,7 +125,14 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     const selected = isSelected('room', room.id);
     const invalid = invalidIds.has(room.id);
 
-    const fill = flatMesh(room.shape, selected ? COLORS.roomFillSelected : COLORS.roomFill, -0.02);
+    // A cabin is tinted, so "who can book in here" is visible on the plan rather than
+    // only in a panel someone has to click into.
+    const cabin = room.kind === 'CABIN';
+    const fill = flatMesh(
+      room.shape,
+      selected ? COLORS.roomFillSelected : cabin ? COLORS.cabinFill : COLORS.roomFill,
+      -0.02,
+    );
     fill.userData.pick = {
       selection: { type: 'room', id: room.id },
       local: room.transform,
@@ -133,7 +142,9 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     group.add(
       lineFrom(
         outlinePoints(room.shape),
-        invalid ? COLORS.invalid : selected ? COLORS.roomEdgeSelected : COLORS.roomEdge,
+        invalid
+          ? COLORS.invalid
+          : selected ? COLORS.roomEdgeSelected : cabin ? COLORS.cabinEdge : COLORS.roomEdge,
       ),
     );
 

@@ -342,6 +342,7 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
   const selection = useSingleSelection()!;
   const renameRoom = useEditorStore((s) => s.renameRoom);
   const setRoomRate = useEditorStore((s) => s.setRoomRate);
+  const setRoomKind = useEditorStore((s) => s.setRoomKind);
   const resizeShape = useEditorStore((s) => s.resizeShape);
   const rotateEntity = useEditorStore((s) => s.rotateEntity);
   const moveEntity = useEditorStore((s) => s.moveEntity);
@@ -354,7 +355,7 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
     <Shell
       icon={<Frame className="size-4" />}
       title={room.name}
-      subtitle="Room"
+      subtitle={room.kind === 'CABIN' ? 'Call cabin' : 'Room'}
       locked={!canEdit}
       onDelete={canEdit ? deleteSelected : undefined}
     >
@@ -376,6 +377,26 @@ function RoomInspector({ canEdit }: { canEdit: boolean }) {
         disabled={!canEdit}
         onChange={(rot) => rotateEntity(selection, rot)}
       />
+
+      <Field label="What this room is for">
+        <Select
+          value={room.kind ?? 'ROOM'}
+          disabled={!canEdit}
+          onValueChange={(k) => setRoomKind(room.id, k as 'ROOM' | 'CABIN')}
+        >
+          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ROOM">Open room — anyone can book a seat</SelectItem>
+            <SelectItem value="CABIN">Call cabin — managers and admins only</SelectItem>
+          </SelectContent>
+        </Select>
+        {room.kind === 'CABIN' && (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            The server turns away anyone else, so this is a permission rather than a
+            hidden button.
+          </p>
+        )}
+      </Field>
 
       <Separator />
 

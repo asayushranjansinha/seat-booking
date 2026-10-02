@@ -34,6 +34,8 @@ public record SceneDto(
             @NotNull JsonNode transform,
             BigDecimal height,
             BigDecimal hourlyRate,
+            /** ROOM, or CABIN for a call room only managers and admins may book. */
+            String kind,
             @Valid List<PartitionDto> partitions,
             @Valid List<GateDto> gates,
             /**
@@ -47,7 +49,7 @@ public record SceneDto(
         public RoomDto(UUID id, String name, JsonNode shape, JsonNode transform,
                        BigDecimal height, BigDecimal hourlyRate,
                        List<PartitionDto> partitions, List<GateDto> gates) {
-            this(id, name, shape, transform, height, hourlyRate, partitions, gates, List.of());
+            this(id, name, shape, transform, height, hourlyRate, "ROOM", partitions, gates, List.of());
         }
     }
 

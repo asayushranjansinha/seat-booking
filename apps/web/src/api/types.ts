@@ -43,6 +43,8 @@ export interface RoomJson {
   transform: TransformJson;
   height: number;
   hourlyRate: number | null;
+  /** ROOM, or CABIN: a call room only managers and admins may book a seat in. */
+  kind?: 'ROOM' | 'CABIN';
   partitions: PartitionJson[];
   gates: GateJson[];
   subZones?: SubZoneJson[];

@@ -104,7 +104,7 @@ public class LayoutService {
                     return new SceneDto.RoomDto(
                             r.getId(), r.getName(),
                             GeometryJson.parse(r.getShape()), GeometryJson.parse(r.getTransform()),
-                            r.getHeight(), r.getHourlyRate(), parts,
+                            r.getHeight(), r.getHourlyRate(), r.getKind(), parts,
                             gatesByRoom.getOrDefault(r.getId(), List.of()), zones);
                 })
                 .toList();
@@ -177,6 +177,9 @@ public class LayoutService {
                 room.setHeight(r.height());
             }
             room.setHourlyRate(r.hourlyRate());
+            // Anything the client does not recognise is an ordinary room. A typo must not
+            // silently create a space nobody is allowed to book.
+            room.setKind("CABIN".equals(r.kind()) ? "CABIN" : "ROOM");
             rooms.save(room);
 
             for (SceneDto.PartitionDto p : nullSafe(r.partitions())) {
@@ -207,9 +210,14 @@ public class LayoutService {
         }
         furniture.flush();
 
+        // The floor decides seat codes, not the order things were drawn in. Worked out
+        // here rather than trusted from the client: two people editing one draft would
+        // each renumber from their own view of it.
+        Map<UUID, String> codes = SeatNumbering.assign(scene);
+
         for (SceneDto.SeatDto s : nullSafe(scene.seats())) {
             Seat seat = new Seat(orgId, planVersionId, ids.reference(s.roomId()),
-                    ids.reference(s.tableId()), s.code(),
+                    ids.reference(s.tableId()), codes.getOrDefault(s.id(), s.code()),
                     GeometryJson.toJson(s.shape()), GeometryJson.toJson(s.localTransform()),
                     s.seatIndex());
             seat.setId(ids.resolve(s.id()));

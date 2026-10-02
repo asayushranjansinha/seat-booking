@@ -44,6 +44,14 @@ public class BookingWriter {
      */
     public static class ContendedException extends RuntimeException {}
 
+    /**
+     * The booker already holds a desk over part of this period.
+     *
+     * <p>A different constraint from the seat one and a different sentence to the person:
+     * the seat is free, they are not.
+     */
+    public static class AlreadyHoldingADeskException extends RuntimeException {}
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Booking insert(Booking booking) {
         lockSeat(booking.getSeatId());
@@ -53,7 +61,12 @@ public class BookingWriter {
             throw new ContendedException();
         } catch (DataIntegrityViolationException e) {
             if (isExclusionViolation(e)) {
-                throw new SeatTakenException();
+                // Two exclusion constraints can fire here and they mean opposite things.
+                // Reporting "that seat is taken" when someone is simply already sitting
+                // somewhere else sends them hunting for a free seat they will never find.
+                throw mentions(e, "booking_one_desk_per_person")
+                        ? new AlreadyHoldingADeskException()
+                        : new SeatTakenException();
             }
             throw e;
         }
@@ -90,9 +103,19 @@ public class BookingWriter {
             if (t instanceof java.sql.SQLException sql && EXCLUSION_VIOLATION.equals(sql.getSQLState())) {
                 return true;
             }
-            if (t.getMessage() != null && t.getMessage().contains("booking_no_overlap")) {
+            if (t.getMessage() != null
+                    && (t.getMessage().contains("booking_no_overlap")
+                        || t.getMessage().contains("booking_one_desk_per_person"))) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    /** Whether any message in the chain names this constraint. */
+    private static boolean mentions(Throwable e, String constraint) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t.getMessage() != null && t.getMessage().contains(constraint)) return true;
         }
         return false;
     }

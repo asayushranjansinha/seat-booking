@@ -39,7 +39,7 @@ class EstateTest {
 
     @BeforeEach
     void setUp() {
-        DemoData.require(jdbc);
+        DemoData.requireAnyPublishedSeats(jdbc);
         var user = users.findByEmailIgnoreCase("admin@demo.test").orElseThrow();
         admin = new CurrentUser(user.getId(), user.getOrganizationId(), user.getEmail(), Role.ADMIN);
 
@@ -216,11 +216,22 @@ class EstateTest {
     }
 
     /** Book the nth seat, so two calls do not contend for the same one. */
+    /**
+     * One booking per call, on a different seat and in a different window.
+     *
+     * <p>The windows have to differ now: one desk per person at a time is a database
+     * constraint, so two overlapping bookings for one user can no longer be created even
+     * as a fixture. The point of the test is unchanged — several bookings by ONE person
+     * must not be reported as several people — and it is a fairer fixture for it, since
+     * that is how one person really does end up with two bookings on a floor.
+     */
     private UUID bookSeatOn(UUID floorId, int offset) {
         return jdbc.sql("""
                 INSERT INTO booking (organization_id, seat_id, user_id, starts_at, ends_at, status, cost)
                 SELECT s.organization_id, s.id, u.id,
-                       now() + interval '2 days', now() + interval '2 days 2 hours', 'CONFIRMED', 0
+                       now() + interval '2 days' + (:offset * interval '3 hours'),
+                       now() + interval '2 days 2 hours' + (:offset * interval '3 hours'),
+                       'CONFIRMED', 0
                 FROM seat s
                 JOIN floor_plan_version v ON v.id = s.plan_version_id
                      AND v.floor_id = :floorId AND v.status = 'PUBLISHED'
