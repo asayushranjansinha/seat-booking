@@ -51,13 +51,19 @@ function scene(furniture: FurnitureJson[], opts: { subZones?: Vec2Json[][] } = {
 }
 
 describe('arrangeTablesEvenly', () => {
-  it('spaces three tables evenly across the room with equal gaps', () => {
+  it('leaves the same gap everywhere, walls included', () => {
+    // Three 2 x 1 tables, each 3.4 m wide once its chairs are counted, in a 20 m room:
+    // 9.8 m of floor over four gaps, so 2.45 m against each wall and between each pair.
     const s = scene([table('a', -1, 3), table('b', 0.5, -2), table('c', 7, 1)]);
     const { moves } = arrangeTablesEvenly(s, ROOM);
     const xs = moves.map((m) => m.x).sort((p, q) => p - q);
-    xs.forEach((x, i) => expect(x).toBeCloseTo(-20 / 3 + i * (20 / 3), 9));
-    // Gap to each wall is half the gap between tables — that is what reads as even.
-    expect(xs[0]! - -10).toBeCloseTo((xs[1]! - xs[0]!) / 2, 9);
+    const gaps = [
+      (xs[0]! - 1.7) - -10,
+      (xs[1]! - 1.7) - (xs[0]! + 1.7),
+      (xs[2]! - 1.7) - (xs[1]! + 1.7),
+      10 - (xs[2]! + 1.7),
+    ];
+    for (const g of gaps) expect(g).toBeCloseTo(2.45, 9);
   });
 
   it('measures the chairs, not just the table', () => {
@@ -72,8 +78,10 @@ describe('arrangeTablesEvenly', () => {
     expect(five.crowded).toEqual([]);
     const xs = five.moves.map((m) => m.x).sort((p, q) => p - q);
     for (let i = 1; i < xs.length; i++) {
-      expect(xs[i]! - xs[i - 1]!).toBeCloseTo(4, 9);
-      expect(xs[i]! - xs[i - 1]!).toBeGreaterThan(3.4); // chair rings stay clear
+      // 5 x 3.4 m of footprint in 20 m leaves 3 m over six gaps: half a metre each, so
+      // the chair rings clear each other and the centres sit 3.9 m apart.
+      expect(xs[i]! - xs[i - 1]!).toBeCloseTo(3.9, 9);
+      expect((xs[i]! - 1.7) - (xs[i - 1]! + 1.7)).toBeCloseTo(0.5, 9);
     }
 
     const six = arrangeTablesEvenly(
@@ -105,6 +113,20 @@ describe('arrangeTablesEvenly', () => {
     expect(crowded.map((c) => c.zone)).toContain('Zone 1');
   });
 
+  it('leaves the same gap between rows as against the top and bottom walls', () => {
+    // Six tables become three columns by two rows. Each row is 2.4 m deep with its
+    // chairs, so 4.8 m of the room's 10 m depth is used and the remaining 5.2 m is split
+    // three ways: above the first row, between the two, and below the second.
+    const s = scene(Array.from({ length: 6 }, (_, i) => table(`t${i}`, i * 2 - 5, 0)));
+    const { moves } = arrangeTablesEvenly(s, ROOM);
+    const ys = [...new Set(moves.map((m) => m.y))].sort((a, b) => b - a);
+    expect(ys).toHaveLength(2);
+    const expected = (10 - 4.8) / 3;
+    expect(5 - (ys[0]! + 1.2)).toBeCloseTo(expected, 9);           // top wall to row one
+    expect((ys[0]! - 1.2) - (ys[1]! + 1.2)).toBeCloseTo(expected, 9); // between the rows
+    expect((ys[1]! - 1.2) - -5).toBeCloseTo(expected, 9);          // row two to the floor
+  });
+
   it('does not reshuffle which table sits where', () => {
     // b is to the right of a. After arranging, it must still be to the right of a.
     const s = scene([table('a', -6, 1), table('b', 2, 1.2), table('c', 6, 0.9)]);
@@ -124,20 +146,19 @@ describe('arrangeTablesEvenly', () => {
     expect(crowded[0]!.fits).toBeLessThan(40);
   });
 
-  it('accounts for a table that has been turned sideways', () => {
-    // Turned 90 degrees, a 2 x 1 table with its chairs is 2 m wide, not 3 m.
+  it('measures a table that has been turned sideways', () => {
+    // Upright, a 2 x 1 table with its chairs is 3.4 m across; turned 90 degrees it is
+    // 2.4 m. Two of them in a 20 m room therefore sit CLOSER together when turned — the
+    // tables are narrower, so the four equal gaps each get wider. Using the unrotated
+    // width would give both pairs the same answer.
     const upright = arrangeTablesEvenly(scene([table('a', 0, 0), table('b', 3, 0)]), ROOM);
     const sideways = arrangeTablesEvenly(
       scene([table('a', 0, 0, Math.PI / 2), table('b', 3, 0, Math.PI / 2)]), ROOM,
     );
-    // Both get the full width of the room, but the sideways pair fits in one row where
-    // the upright pair's taller footprint does not change the column count here.
-    expect(upright.moves).toHaveLength(2);
-    expect(sideways.moves).toHaveLength(2);
-    // The turned tables are narrower, so a grid of them is at least as wide-friendly.
-    const span = (r: typeof upright) =>
-      Math.abs(r.moves[0]!.x - r.moves[1]!.x) + Math.abs(r.moves[0]!.y - r.moves[1]!.y);
-    expect(span(sideways)).toBeGreaterThanOrEqual(span(upright) - 1e-9);
+    const centres = (r: typeof upright) => Math.abs(r.moves[0]!.x - r.moves[1]!.x);
+    expect(centres(upright)).toBeCloseTo(3.4 + (20 - 6.8) / 3, 9);
+    expect(centres(sideways)).toBeCloseTo(2.4 + (20 - 4.8) / 3, 9);
+    expect(centres(sideways)).toBeLessThan(centres(upright));
   });
 
   it('reports no change when the room is already arranged', () => {

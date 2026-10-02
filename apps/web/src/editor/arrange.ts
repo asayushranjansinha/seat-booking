@@ -29,7 +29,7 @@ import { pointInRing, ringFromJson } from '@seat-booking/geometry';
 import {
   boundsOf, height, ringOf, rotatedBounds, width, type Box,
 } from '@/editor/extent';
-import type { RoomJson, SceneJson, ShapeJson } from '@/api/types';
+import type { FurnitureJson, RoomJson, SceneJson, ShapeJson } from '@/api/types';
 
 export interface Move {
   tableId: string;
@@ -320,20 +320,49 @@ export function arrangeTablesEvenly(scene: SceneJson, roomId: string): ArrangeRe
         : [],
     );
 
-    // Equal gaps, including half a gap against each wall: stepping by the full span and
-    // centring within each step is what makes the margins look deliberate.
-    const stepX = width(bounds) / cols;
-    const stepY = height(bounds) / rows;
+    // Equal GAPS, not equal centres — and that is not the same thing the moment two
+    // tables differ in size, which on a real floor is always. A uniform grid with every
+    // table centred in its cell puts the centres a perfect distance apart and leaves the
+    // visible gaps uneven: measured off one such arrangement, three benches 17, 20 and
+    // 13 m wide ended up with 8, 8, 21 and 21 between them and the walls.
+    //
+    // So each row is filled by walking across it, giving every table the room its own
+    // footprint needs and dividing what is left into equal gaps — one against each wall
+    // and one between each pair. Rows are stacked the same way down the zone.
+    const printOf = new Map(group.map((t) => [t.id, footprint(scene, t.id, t.shape, t.transform.rot)]));
+    const rowsOfTables: FurnitureJson[][] = [];
+    for (let i = 0; i < ordered.length; i += cols) rowsOfTables.push(ordered.slice(i, i + cols));
 
-    ordered.forEach((table, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      moves.push({
-        tableId: table.id,
-        x: bounds.minX + stepX * (col + 0.5),
-        // Rows run down the room, and y grows upward, so the first row is the top one.
-        y: bounds.maxY - stepY * (row + 0.5),
+    // A row is as tall as its tallest member, so a row of desks does not claim the depth
+    // of a row of benches.
+    const rowHeights = rowsOfTables.map(
+      (r) => Math.max(...r.map((t) => printOf.get(t.id)!.halfH * 2)),
+    );
+    const gapY = Math.max(
+      0,
+      (height(bounds) - rowHeights.reduce((a, b) => a + b, 0)) / (rowsOfTables.length + 1),
+    );
+
+    // Rows run down the room, and y grows upward, so the first row is the top one.
+    let cursorY = bounds.maxY - gapY;
+    rowsOfTables.forEach((rowTables, r) => {
+      const rowHeight = rowHeights[r]!;
+      const centreY = cursorY - rowHeight / 2;
+
+      const widths = rowTables.map((t) => printOf.get(t.id)!.halfW * 2);
+      const gapX = Math.max(
+        0,
+        (width(bounds) - widths.reduce((a, b) => a + b, 0)) / (rowTables.length + 1),
+      );
+
+      let cursorX = bounds.minX + gapX;
+      rowTables.forEach((table, i) => {
+        const w = widths[i]!;
+        moves.push({ tableId: table.id, x: cursorX + w / 2, y: centreY });
+        cursorX += w + gapX;
       });
+
+      cursorY -= rowHeight + gapY;
     });
   }
 
