@@ -29,9 +29,14 @@ const COLORS = {
   invalid: 0xe0646f,
   gate: 0xf0c24a,
   emergency: 0xe0646f,
-  partition: 0x8792a6,
-  wall: 0x2b3340,
-  cabinWall: 0x3a3350,
+  // A partition IS a wall, so it is drawn in the wall's colour. As a pale grey hairline
+  // it read as a scratch on the plan rather than as something you cannot walk through.
+  partition: 0x3d465a,
+  // Lighter than the floor it stands on, or poché is invisible: the wall used to be
+  // 0x2b3340 against a 0x222834 floor, which is a difference you can measure and cannot
+  // see.
+  wall: 0x3d465a,
+  cabinWall: 0x4b4170,
   cabinFill: 0x332b45,
   cabinEdge: 0x8f7ad1,
   tableLip: 0x2f3f55,
@@ -153,23 +158,26 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
       ),
     );
 
+    // The ring is wanted here anyway for the doors, and the walls are built from the
+    // same one, so a door's opening cannot land anywhere but on its own wall.
+    const outline = ringFor(room.shape);
+    const wallOpenings = room.gates.map((gate) => {
+      const a = outline[gate.wallEdgeIdx % outline.length];
+      const b = outline[(gate.wallEdgeIdx + 1) % outline.length];
+      const length = a && b ? Math.hypot(b.x - a.x, b.y - a.y) : 0;
+      const half = length > 0 ? gate.width / 2 / length : 0;
+      return { edgeIdx: gate.wallEdgeIdx, from: gate.offsetT - half, to: gate.offsetT + half };
+    });
+    group.add(roomWalls(
+      outline,
+      room.height,
+      WALL_THICKNESS,
+      cabin ? COLORS.cabinWall : COLORS.wall,
+      wallOpenings,
+      view,
+    ));
+
     if (view === '3D') {
-      // The ring is wanted here anyway for the doors, and the walls are now built from
-      // the same one, so a door's opening cannot land anywhere but on its own wall.
-      const outline = ringFor(room.shape);
-      group.add(roomWalls(
-        outline,
-        room.height,
-        WALL_THICKNESS,
-        cabin ? COLORS.cabinWall : COLORS.wall,
-        room.gates.map((gate) => {
-          const a = outline[gate.wallEdgeIdx % outline.length];
-          const b = outline[(gate.wallEdgeIdx + 1) % outline.length];
-          const length = a && b ? Math.hypot(b.x - a.x, b.y - a.y) : 0;
-          const half = length > 0 ? gate.width / 2 / length : 0;
-          return { edgeIdx: gate.wallEdgeIdx, from: gate.offsetT - half, to: gate.offsetT + half };
-        }),
-      ));
       // A thin floor so the room reads as a space rather than a hollow outline.
       const floor = flatMesh(room.shape, COLORS.roomFill, 0);
       group.add(floor);

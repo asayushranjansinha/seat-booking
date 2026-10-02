@@ -75,11 +75,13 @@ export function tableMesh(shape: ShapeJson, colour: number, lip: number, view: '
   const extent = extentOf(shape);
 
   if (view === '2D') {
-    group.add(flat(new THREE.ShapeGeometry(threeShape(shape)), colour, 0.01));
-    // A second fill, scaled down, stands in for the lip. Offsetting the ring properly
-    // would be exact and would also mean an offset per table on every rebuild.
-    const inset = Math.min(0.94, Math.max(0.8, 1 - 0.08 / Math.max(extent.x, extent.y)));
-    const top = flat(new THREE.ShapeGeometry(threeShape(shape)), lip, 0.012);
+    group.add(flat(new THREE.ShapeGeometry(threeShape(shape)), lip, 0.01));
+    // The lip is an EDGE, so it is a fixed width of table — not a share of it. As a
+    // percentage it came out 28 px wide on a 20 m bench and read as a box inside a box
+    // rather than as a surface with a rim.
+    const edge = 0.08;
+    const inset = Math.max(0.5, 1 - edge / Math.max(extent.x, extent.y));
+    const top = flat(new THREE.ShapeGeometry(threeShape(shape)), colour, 0.012);
     top.scale.set(inset, inset, 1);
     group.add(top);
     return group;
@@ -136,12 +138,16 @@ export function chairMesh(shape: ShapeJson, colour: number, trim: number, view: 
   const depth = Math.max(extent.x * 2, 0.3);
 
   if (view === '2D') {
-    const pad = flat(new THREE.ShapeGeometry(threeShape(shape)), colour, 0.04);
+    // Drawn as a SYMBOL sized from the seat, not as the seat's own outline. The stored
+    // shape is a disc — it is what the validator measures and what the pointer hits — and
+    // a disc with a bar 0.08 m behind it is, at any zoom a whole floor fits into, a green
+    // dot. A plan symbol has to be built from proportions of itself to survive that.
+    const pad = flat(new THREE.PlaneGeometry(depth * 0.78, width * 0.92), colour, 0.04);
+    pad.position.x = depth * 0.08; // nudged toward the table, leaving room for the back
     group.add(pad);
-    // The back: a bar across the rear edge, which is -x once the seat is turned to face
-    // its table.
-    const back = flat(new THREE.PlaneGeometry(BACK_THICKNESS * 1.6, width * 0.9), trim, 0.045);
-    back.position.x = -extent.x - BACK_THICKNESS;
+
+    const back = flat(new THREE.PlaneGeometry(depth * 0.22, width), trim, 0.045);
+    back.position.x = -depth * 0.39;
     group.add(back);
     return group;
   }
@@ -269,17 +275,27 @@ export function roomWalls(
   thickness: number,
   colour: number,
   openings: readonly WallOpening[],
+  view: '2D' | '3D',
 ): THREE.Group {
   const group = new THREE.Group();
   if (ring.length < 2) return group;
 
-  const material = new THREE.MeshStandardMaterial({
-    color: colour, roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
-  });
+  const material = view === '3D'
+    ? new THREE.MeshStandardMaterial({
+      color: colour, roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
+    })
+    : new THREE.MeshBasicMaterial({ color: colour });
+
+  // In plan the wall is the same band seen from above, so both views are the same walls
+  // with the same doorways in them and cannot drift apart. A plan without poché is a
+  // diagram: the single hairline the rooms used to have said nothing about where the
+  // walls were, only where the floor stopped.
   const piece = (length: number, tall: number, cx: number, cy: number, cz: number, angle: number) => {
     if (length <= 1e-6 || tall <= 1e-6) return;
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(length, thickness, tall), material);
-    mesh.position.set(cx, cy, cz);
+    const mesh = view === '3D'
+      ? new THREE.Mesh(new THREE.BoxGeometry(length, thickness, tall), material)
+      : new THREE.Mesh(new THREE.PlaneGeometry(length, thickness), material);
+    mesh.position.set(cx, cy, view === '3D' ? cz : 0.02);
     mesh.rotation.z = angle;
     group.add(mesh);
   };
@@ -315,7 +331,9 @@ export function roomWalls(
         piece((from - cursor) * length, height, mid.x, mid.y, height / 2, angle);
       }
       // The lintel: wall above the opening, so the hole is a doorway and not a gap.
-      if (height > DOOR_HEIGHT) {
+      // Only in three dimensions — seen from above there is no "above", and drawing it
+      // would fill the doorway back in.
+      if (view === '3D' && height > DOOR_HEIGHT) {
         const mid = at((from + to) / 2);
         piece(
           (to - from) * length, height - DOOR_HEIGHT,
@@ -349,8 +367,10 @@ export function roomWalls(
     while (turn < -Math.PI) turn += 2 * Math.PI;
     if (Math.abs(turn) < TURN) continue;
 
-    const post = new THREE.Mesh(new THREE.BoxGeometry(thickness, thickness, height), material);
-    post.position.set(here.x, here.y, height / 2);
+    const post = view === '3D'
+      ? new THREE.Mesh(new THREE.BoxGeometry(thickness, thickness, height), material)
+      : new THREE.Mesh(new THREE.PlaneGeometry(thickness, thickness), material);
+    post.position.set(here.x, here.y, view === '3D' ? height / 2 : 0.021);
     post.rotation.z = incoming + turn / 2;
     group.add(post);
   }
