@@ -10,6 +10,8 @@ import {
 } from '@seat-booking/geometry';
 import type {
   FurnitureJson,
+  GateJson,
+  PartitionJson,
   PlacementJson,
   RoomJson,
   SceneJson,
@@ -29,8 +31,22 @@ export type Tool =
   | 'SELECT'
   | 'ROOM_RECT'
   | 'ROOM_CIRCLE'
+  | 'ROOM_POLY'
   | 'TABLE_RECT'
-  | 'TABLE_ROUND';
+  | 'TABLE_ROUND'
+  | 'GATE'
+  | 'PARTITION';
+
+/**
+ * A multi-click drawing in progress.
+ *
+ * <p>Kept in the store rather than in the canvas so the toolbar can show what is being
+ * drawn and Escape can cancel it from anywhere.
+ */
+export type Drawing =
+  | { kind: 'POLYGON'; points: Array<{ x: number; y: number }> }
+  | { kind: 'PARTITION'; roomId: string; start: { x: number; y: number } }
+  | null;
 
 /** The part of the store that undo/redo applies to. Everything else is transient. */
 interface UndoableState {
@@ -49,6 +65,9 @@ interface EditorState extends UndoableState {
   dirty: boolean;
   /** True while a pointer drag is in flight, so history records one entry, not sixty. */
   dragging: boolean;
+  drawing: Drawing;
+  /** World position of the pointer, for the live dimension readout. */
+  cursor: { x: number; y: number } | null;
 
   loadScene: (scene: SceneJson, etag: string | null) => void;
   markSaved: (scene: SceneJson, etag: string | null) => void;
@@ -72,6 +91,15 @@ interface EditorState extends UndoableState {
   deleteSelected: () => void;
   addRoom: (shape: ShapeJson, at: { x: number; y: number }) => void;
   addTable: (roomId: string, shape: ShapeJson, at: { x: number; y: number }) => void;
+
+  setCursor: (p: { x: number; y: number } | null) => void;
+  startPolygon: (p: { x: number; y: number }) => void;
+  addPolygonPoint: (p: { x: number; y: number }) => void;
+  commitPolygon: () => void;
+  startPartition: (roomId: string, start: { x: number; y: number }) => void;
+  commitPartition: (end: { x: number; y: number }) => void;
+  cancelDrawing: () => void;
+  addGate: (roomId: string, wallEdgeIdx: number, offsetT: number, width: number, type: GateJson['type']) => void;
 }
 
 const uuid = (): string => crypto.randomUUID();
@@ -219,8 +247,16 @@ export const useEditorStore = create<EditorState>()(
       snapEnabled: true,
       dirty: false,
       dragging: false,
+      drawing: null,
+      cursor: null,
 
-      loadScene: (scene, etag) => set({ scene, etag, dirty: false, selection: null, violations: [] }),
+      loadScene: (scene, etag) => {
+        set({ scene, etag, dirty: false, selection: null, violations: [], drawing: null });
+        // Opening a layout is not an edit. Without this the load itself sits in the
+        // history as a step from `scene: null`, and undoing far enough unloads the
+        // document: the canvas empties and the toolbar reports "no layout".
+        useEditorStore.temporal.getState().clear();
+      },
       markSaved: (scene, etag) => set({ scene, etag, dirty: false }),
       setSelection: (selection) => set({ selection }),
       setTool: (tool) => set({ tool }),
@@ -361,6 +397,93 @@ export const useEditorStore = create<EditorState>()(
             ...state,
             scene: { ...scene, seats: scene.seats.filter((s) => s.id !== selection.id) },
             selection: null,
+            dirty: true,
+          };
+        }),
+
+      setCursor: (cursor) => set({ cursor }),
+
+      startPolygon: (p) => set({ drawing: { kind: 'POLYGON', points: [p] } }),
+
+      addPolygonPoint: (p) =>
+        set((state) =>
+          state.drawing?.kind === 'POLYGON'
+            ? { ...state, drawing: { kind: 'POLYGON', points: [...state.drawing.points, p] } }
+            : state,
+        ),
+
+      /**
+       * Close the pen and turn the traced points into a room.
+       *
+       * <p>The points are traced in world space but a shape is defined around its own
+       * origin, so they are recentred on their centroid and the offset becomes the room's
+       * transform. Storing the raw world points instead would make the room's origin
+       * arbitrary, and rotating it would swing it across the floor.
+       */
+      commitPolygon: () =>
+        set((state) => {
+          if (state.drawing?.kind !== 'POLYGON' || !state.scene) return state;
+          const pts = state.drawing.points;
+          if (pts.length < 3) return { ...state, drawing: null, tool: 'SELECT' };
+
+          const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+          const cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+          const room: RoomJson = {
+            id: uuid(),
+            name: `Room ${state.scene.rooms.length + 1}`,
+            shape: { kind: 'POLYGON', points: pts.map((p) => [p.x - cx, p.y - cy]) },
+            transform: { x: cx, y: cy, rot: 0 },
+            height: 2.7,
+            hourlyRate: null,
+            partitions: [],
+            gates: [],
+          };
+          return {
+            ...state,
+            scene: { ...state.scene, rooms: [...state.scene.rooms, room] },
+            drawing: null,
+            tool: 'SELECT',
+            selection: { type: 'room', id: room.id },
+            dirty: true,
+          };
+        }),
+
+      startPartition: (roomId, start) => set({ drawing: { kind: 'PARTITION', roomId, start } }),
+
+      commitPartition: (end) =>
+        set((state) => {
+          if (state.drawing?.kind !== 'PARTITION' || !state.scene) return state;
+          const { roomId, start } = state.drawing;
+          const partition: PartitionJson = {
+            id: uuid(),
+            polyline: [
+              [start.x, start.y],
+              [end.x, end.y],
+            ],
+            thickness: 0.12,
+          };
+          return {
+            ...state,
+            scene: updateRoom(state.scene, roomId, (r) => ({
+              ...r,
+              partitions: [...r.partitions, partition],
+            })),
+            drawing: null,
+            tool: 'SELECT',
+            dirty: true,
+          };
+        }),
+
+      cancelDrawing: () => set({ drawing: null }),
+
+      addGate: (roomId, wallEdgeIdx, offsetT, width, type) =>
+        set((state) => {
+          if (!state.scene) return state;
+          const gate: GateJson = { id: uuid(), wallEdgeIdx, offsetT, width, type };
+          return {
+            ...state,
+            scene: updateRoom(state.scene, roomId, (r) => ({ ...r, gates: [...r.gates, gate] })),
+            tool: 'SELECT',
             dirty: true,
           };
         }),

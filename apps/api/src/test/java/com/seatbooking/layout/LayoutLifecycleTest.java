@@ -145,6 +145,32 @@ class LayoutLifecycleTest {
     }
 
     @Test
+    @DisplayName("a newly drawn room keeps the id the editor minted for it")
+    void newEntityKeepsItsClientId() {
+        Floor floor = demoFloor();
+        SceneDto draft = freshDraft(floor);
+
+        // What the editor does when the pen closes: mint a uuid and save.
+        UUID clientId = UUID.randomUUID();
+        SceneDto.RoomDto drawn = new SceneDto.RoomDto(
+                clientId, "Drawn by the pen",
+                GeometryJson.parse("{\"kind\":\"POLYGON\",\"points\":[[0,0],[4,0],[4,4],[0,4]]}"),
+                GeometryJson.parse("{\"x\":40,\"y\":40,\"rot\":0}"),
+                new java.math.BigDecimal("2.700"), null, List.of(), List.of());
+
+        List<SceneDto.RoomDto> rooms = new java.util.ArrayList<>(draft.rooms());
+        rooms.add(drawn);
+        SceneDto saved = layouts.saveScene(draft.planVersionId(),
+                new SceneDto(draft.planVersionId(), draft.floorId(), draft.status(),
+                        draft.revision(), rooms, draft.furniture(), draft.seats()),
+                draft.revision());
+
+        // Rewriting it would leave the editor's selection pointing at nothing.
+        assertTrue(saved.rooms().stream().anyMatch(r -> clientId.equals(r.id())),
+                "a brand-new id must survive the save; only a clone's borrowed ids are remapped");
+    }
+
+    @Test
     @DisplayName("a stale If-Match is refused rather than silently overwriting another admin")
     void staleRevisionIsRefused() {
         Floor floor = demoFloor();

@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/api/client';
 import type { AffectedBookingJson, BuildingJson, SessionJson } from '@/api/types';
 import { useEditorStore } from '@/state/editorStore';
 import { EditorCanvas } from '@/canvas/EditorCanvas';
+import { DimensionReadout } from './DimensionReadout';
 import { PropertiesPanel } from './PropertiesPanel';
 import { Toolbar } from './Toolbar';
 import { ValidationPanel } from './ValidationPanel';
@@ -18,6 +19,8 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
   const setViolations = useEditorStore((s) => s.setViolations);
   const deleteSelected = useEditorStore((s) => s.deleteSelected);
   const setTool = useEditorStore((s) => s.setTool);
+  const cancelDrawing = useEditorStore((s) => s.cancelDrawing);
+  const drawing = useEditorStore((s) => s.drawing);
 
   const [buildings, setBuildings] = useState<BuildingJson[]>([]);
   const [floorId, setFloorId] = useState<string | null>(null);
@@ -111,6 +114,21 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
     }
   }, [scene, dirty, etag, markSaved, setViolations, loadScene, refreshBuildings]);
 
+  /**
+   * Autosave, a few seconds after editing stops.
+   *
+   * <p>Debounced rather than per-change: the scene save replaces the whole graph, so
+   * firing it on every pointer move during a drag would send dozens of full layouts and
+   * bump the revision out from under the editor's own ETag.
+   */
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    if (!canEdit || !dirty || busy !== null || drawing) return;
+    const timer = setTimeout(() => void saveRef.current(), 2500);
+    return () => clearTimeout(timer);
+  }, [canEdit, dirty, busy, drawing, scene]);
+
   const createDraft = useCallback(async () => {
     if (!floorId) return;
     setBusy('drafting');
@@ -132,7 +150,11 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'SELECT') return;
       const temporal = useEditorStore.temporal.getState();
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelDrawing();
+        setTool('SELECT');
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) temporal.redo();
         else temporal.undo();
@@ -147,7 +169,7 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canEdit, deleteSelected, setTool]);
+  }, [canEdit, deleteSelected, setTool, cancelDrawing]);
 
   return (
     <main style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -195,6 +217,7 @@ export function Editor({ session, onSignOut }: { session: SessionJson; onSignOut
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <div style={{ flex: 1, position: 'relative' }}>
           <EditorCanvas />
+          <DimensionReadout />
         </div>
         <aside
           style={{

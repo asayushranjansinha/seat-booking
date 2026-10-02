@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { SceneJson, ShapeJson } from '@/api/types';
 import type { Selection } from '@/state/editorStore';
-import { extrudedGeometry, footprintGeometry, outlinePoints, ringFor } from './shapeToThree';
+import { extrudedGeometry, footprintGeometry, outlinePoints, ringFor, wallGeometry } from './shapeToThree';
+import type { Drawing } from '@/state/editorStore';
 
 export const COLORS = {
   roomFill: 0x1b2029,
@@ -16,6 +17,12 @@ export const COLORS = {
   gate: 0xffc857,
   emergency: 0xff6b6b,
   partition: 0x8d97a8,
+  tableEdge: 0x4a6c92,
+  tableEdgeSelected: 0x8dc2ff,
+  subZone: 0x2a3443,
+  subZoneEdge: 0x45536a,
+  guide: 0xffc857,
+  pen: 0x4c9aff,
 } as const;
 
 /** What a picked object refers to, stashed on the three.js object. */
@@ -59,12 +66,19 @@ function solidMesh(shape: ShapeJson, height: number, color: number, opacity = 1)
  * geometry engine does. Rotating a table is one `group.rotation.z` change and every seat
  * on it moves correctly, without a single seat position being recomputed here.
  */
-export function buildSceneGraph(
-  scene: SceneJson,
-  selection: Selection,
-  invalidIds: Set<string>,
-  view: '2D' | '3D',
-): THREE.Group {
+export interface BuildOptions {
+  selection: Selection;
+  invalidIds: Set<string>;
+  view: '2D' | '3D';
+  drawing: Drawing;
+  cursor: { x: number; y: number } | null;
+  snapGuides: Array<[{ x: number; y: number }, { x: number; y: number }]>;
+  /** World metres per screen unit, so grips stay a usable size at any zoom. */
+  handleScale: number;
+}
+
+export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.Group {
+  const { selection, invalidIds, view, drawing, cursor, snapGuides, handleScale } = options;
   const root = new THREE.Group();
   const roomGroups = new Map<string, THREE.Group>();
   const tableGroups = new Map<string, THREE.Group>();
@@ -96,7 +110,32 @@ export function buildSceneGraph(
     );
 
     if (view === '3D') {
-      group.add(solidMesh(room.shape, room.height, COLORS.roomFill, 0.3));
+      group.add(new THREE.Mesh(
+        wallGeometry(room.shape, room.height),
+        new THREE.MeshStandardMaterial({ color: 0x2b3340, side: THREE.DoubleSide }),
+      ));
+      // A thin floor so the room reads as a space rather than a hollow outline.
+      const floor = flatMesh(room.shape, COLORS.roomFill, 0);
+      group.add(floor);
+    }
+
+    // Areas the partitions divide this room into, derived server-side.
+    for (const zone of room.subZones ?? []) {
+      if (zone.ring.length < 3) continue;
+      const path = new THREE.Shape();
+      zone.ring.forEach(([x, y], i) => (i === 0 ? path.moveTo(x, y) : path.lineTo(x, y)));
+      path.closePath();
+      const mesh = new THREE.Mesh(
+        new THREE.ShapeGeometry(path),
+        new THREE.MeshBasicMaterial({ color: COLORS.subZone, side: THREE.DoubleSide }),
+      );
+      mesh.position.z = -0.015;
+      group.add(mesh);
+      group.add(lineFrom(
+        [...zone.ring.map(([x, y]) => new THREE.Vector3(x, y, -0.012)),
+          new THREE.Vector3(zone.ring[0]![0], zone.ring[0]![1], -0.012)],
+        COLORS.subZoneEdge,
+      ));
     }
 
     for (const partition of room.partitions) {
@@ -190,6 +229,56 @@ export function buildSceneGraph(
     );
   }
 
+  // Grips for whatever is selected, in 2D only: the 3D view is for review.
+  if (selection && view === '2D') {
+    if (selection.type === 'room') {
+      const room = scene.rooms.find((r) => r.id === selection.id);
+      const parent = room && roomGroups.get(room.id);
+      if (room && parent) {
+        // Grips live in the room's PARENT space, so they are siblings of the room rather
+        // than children of it; otherwise resizing would scale the grips too.
+        const holder = new THREE.Group();
+        holder.add(buildHandles(room.shape, { x: 0, y: 0, rot: 0 }, selection, handleScale));
+        parent.add(holder);
+      }
+    } else if (selection.type === 'furniture') {
+      const table = scene.furniture.find((f) => f.id === selection.id);
+      const parent = table && roomGroups.get(table.roomId);
+      if (table && parent) {
+        parent.add(buildHandles(table.shape, table.transform, selection, handleScale));
+      }
+    }
+  }
+
+  // The pen and the partition tool, mid-stroke.
+  if (drawing?.kind === 'POLYGON' && drawing.points.length > 0) {
+    const pts = [...drawing.points.map((p) => new THREE.Vector3(p.x, p.y, 0.4))];
+    if (cursor) pts.push(new THREE.Vector3(cursor.x, cursor.y, 0.4));
+    if (drawing.points.length >= 2) pts.push(new THREE.Vector3(drawing.points[0]!.x, drawing.points[0]!.y, 0.4));
+    root.add(lineFrom(pts, COLORS.pen));
+    for (const p of drawing.points) {
+      const dot = new THREE.Mesh(
+        new THREE.CircleGeometry(0.1 * handleScale, 12),
+        new THREE.MeshBasicMaterial({ color: COLORS.pen }),
+      );
+      dot.position.set(p.x, p.y, 0.41);
+      root.add(dot);
+    }
+  } else if (drawing?.kind === 'PARTITION' && cursor) {
+    root.add(lineFrom(
+      [new THREE.Vector3(drawing.start.x, drawing.start.y, 0.4), new THREE.Vector3(cursor.x, cursor.y, 0.4)],
+      COLORS.pen,
+    ));
+  }
+
+  // Whatever the drag latched onto, so the snap is visible rather than mysterious.
+  for (const [a, b] of snapGuides) {
+    root.add(lineFrom(
+      [new THREE.Vector3(a.x, a.y, 0.45), new THREE.Vector3(b.x, b.y, 0.45)],
+      COLORS.guide,
+    ));
+  }
+
   return root;
 }
 
@@ -202,4 +291,88 @@ export function disposeGraph(root: THREE.Object3D): void {
     if (Array.isArray(material)) material.forEach((m) => m.dispose());
     else material?.dispose();
   });
+}
+
+/** What a selection handle does when dragged. */
+export interface HandleData {
+  kind: 'rotate' | 'resize';
+  /** Which corner or axis the handle controls; 0..3 for a rect, 0 for a radius. */
+  index: number;
+  selection: NonNullable<Selection>;
+  /** The entity's shape and local transform at the moment the handle was built. */
+  shape: ShapeJson;
+  local: { x: number; y: number; rot: number };
+}
+
+const HANDLE_FILL = 0xffffff;
+const HANDLE_ROTATE = 0xffc857;
+
+function handleMesh(size: number, colour: number): THREE.Mesh {
+  return new THREE.Mesh(
+    new THREE.CircleGeometry(size, 16),
+    new THREE.MeshBasicMaterial({ color: colour, side: THREE.DoubleSide }),
+  );
+}
+
+/**
+ * Rotate and resize grips for the selected entity, drawn in the parent's space so they
+ * follow the entity through its parents' transforms.
+ *
+ * <p>Sized in world metres rather than pixels, so they grow and shrink with the zoom.
+ * A pixel-constant grip would need the camera here, and the grips are only ever used at
+ * authoring zoom levels where this is fine.
+ */
+export function buildHandles(
+  shape: ShapeJson,
+  local: { x: number; y: number; rot: number },
+  selection: NonNullable<Selection>,
+  scale: number,
+): THREE.Group {
+  const group = new THREE.Group();
+  group.position.set(local.x, local.y, 0);
+  group.rotation.z = local.rot;
+
+  const grip = 0.14 * scale;
+  const corners: Array<{ x: number; y: number; index: number }> = [];
+
+  if (shape.kind === 'RECT') {
+    const w = shape.w / 2;
+    const h = shape.h / 2;
+    corners.push(
+      { x: -w, y: -h, index: 0 },
+      { x: w, y: -h, index: 1 },
+      { x: w, y: h, index: 2 },
+      { x: -w, y: h, index: 3 },
+    );
+  } else if (shape.kind === 'CIRCLE') {
+    corners.push({ x: shape.r, y: 0, index: 0 });
+  } else if (shape.kind === 'ELLIPSE') {
+    corners.push({ x: shape.rx, y: 0, index: 0 }, { x: 0, y: shape.ry, index: 1 });
+  }
+
+  for (const corner of corners) {
+    const mesh = handleMesh(grip, HANDLE_FILL);
+    mesh.position.set(corner.x, corner.y, 0.3);
+    mesh.userData.handle = {
+      kind: 'resize', index: corner.index, selection, shape, local,
+    } satisfies HandleData;
+    group.add(mesh);
+  }
+
+  // Rotation grip, held off the top edge so it never sits under a resize grip.
+  const reach =
+    (shape.kind === 'RECT' ? shape.h / 2
+      : shape.kind === 'CIRCLE' ? shape.r
+        : shape.kind === 'ELLIPSE' ? shape.ry
+          : 1) + 0.6 * scale;
+  const rotate = handleMesh(grip, HANDLE_ROTATE);
+  rotate.position.set(0, reach, 0.3);
+  rotate.userData.handle = { kind: 'rotate', index: 0, selection, shape, local } satisfies HandleData;
+  group.add(rotate);
+  group.add(lineFrom(
+    [new THREE.Vector3(0, reach - 0.6 * scale, 0.25), new THREE.Vector3(0, reach, 0.25)],
+    HANDLE_ROTATE,
+  ));
+
+  return group;
 }

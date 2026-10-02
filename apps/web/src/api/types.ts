@@ -28,6 +28,14 @@ export interface PartitionJson {
   thickness: number;
 }
 
+/** Derived server-side from the partitions; never sent back. */
+export interface SubZoneJson {
+  index: number;
+  name: string;
+  area: number;
+  ring: Vec2Json[];
+}
+
 export interface RoomJson {
   id: string;
   name: string;
@@ -37,6 +45,7 @@ export interface RoomJson {
   hourlyRate: number | null;
   partitions: PartitionJson[];
   gates: GateJson[];
+  subZones?: SubZoneJson[];
 }
 
 export interface FurnitureJson {

@@ -117,6 +117,23 @@ describe('editor history', () => {
     expect(seat(3).override).toBe(true);
   });
 
+  it('undo can never unload the document', () => {
+    // Exercise the real entry path: an empty store, then a load, then edits. Opening a
+    // layout used to sit in the history as a step from `scene: null`, so undoing past
+    // the first edit emptied the canvas and the toolbar read "no layout".
+    temporal().clear();
+    useEditorStore.setState({ scene: null, etag: null });
+    store().loadScene(scene(), '1');
+
+    expect(temporal().pastStates, 'opening a layout is not an edit').toHaveLength(0);
+
+    store().resizeShape({ type: 'furniture', id: TABLE_ID }, { kind: 'RECT', w: 3, h: 1.2 });
+    for (let i = 0; i < 20; i++) temporal().undo();
+
+    expect(store().scene, 'the scene must survive any amount of undo').not.toBeNull();
+    expect(store().scene!.rooms).toHaveLength(1);
+  });
+
   it('selecting something is not an undo step', () => {
     const before = temporal().pastStates.length;
     store().setSelection({ type: 'furniture', id: TABLE_ID });

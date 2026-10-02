@@ -21,18 +21,31 @@ import java.util.UUID;
 final class IdResolver {
 
     private final Set<UUID> ownedByThisVersion;
+    private final Set<UUID> ownedByAnotherVersion;
     private final Map<UUID, UUID> remapped = new HashMap<>();
 
-    IdResolver(Set<UUID> ownedByThisVersion) {
+    IdResolver(Set<UUID> ownedByThisVersion, Set<UUID> ownedByAnotherVersion) {
         this.ownedByThisVersion = ownedByThisVersion;
+        this.ownedByAnotherVersion = ownedByAnotherVersion;
     }
 
-    /** The id to persist this entity under. */
+    /**
+     * The id to persist this entity under.
+     *
+     * <p>Only an id belonging to ANOTHER version is remapped. An id this version already
+     * owns is kept so entity identity survives an ordinary edit, and an id that exists
+     * nowhere yet is kept too: that is a client minting a uuid for something it has just
+     * drawn, and rewriting it would leave the editor holding a selection that no longer
+     * resolves. Only the clone case is actually dangerous.
+     */
     UUID resolve(UUID clientId) {
         if (clientId == null) {
             return UUID.randomUUID();
         }
         if (ownedByThisVersion.contains(clientId)) {
+            return clientId;
+        }
+        if (!ownedByAnotherVersion.contains(clientId)) {
             return clientId;
         }
         return remapped.computeIfAbsent(clientId, k -> UUID.randomUUID());

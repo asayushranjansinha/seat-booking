@@ -29,18 +29,6 @@ spring:
     virtual:
       enabled: true
 
-  mail:
-    host: localhost
-    port: 1025
-    properties:
-      mail.smtp.auth: false
-      mail.smtp.starttls.enable: false
-
-  data:
-    redis:
-      host: localhost
-      port: 6379
-
 server:
   port: 8080
   error:
@@ -56,6 +44,10 @@ seatbooking:
   booking:
     max-advance: P6D
     max-duration: PT6H
+
+# Mail (M3) and Redis (multi-instance SSE) are deliberately absent: their starters are
+# not on the classpath yet, and configuration for a dependency that is not there reads
+# like working wiring. Each block comes back with the dependency that needs it.
 
 logging:
   level:

@@ -3,11 +3,14 @@
 import { useEditorStore, type Tool } from '@/state/editorStore';
 
 const TOOLS: Array<{ id: Tool; label: string; hint: string }> = [
-  { id: 'SELECT', label: 'Select', hint: 'Select and drag (V)' },
+  { id: 'SELECT', label: 'Select', hint: 'Select, drag, and use the grips to rotate or resize (V)' },
   { id: 'ROOM_RECT', label: 'Rect room', hint: 'Click to place a rectangular room' },
   { id: 'ROOM_CIRCLE', label: 'Round room', hint: 'Click to place a circular room' },
+  { id: 'ROOM_POLY', label: 'Pen', hint: 'Click each corner; click the first point again to close. Esc cancels' },
   { id: 'TABLE_RECT', label: 'Rect table', hint: 'Click inside a room to add a rectangular table' },
   { id: 'TABLE_ROUND', label: 'Round table', hint: 'Click inside a room to add a round table' },
+  { id: 'GATE', label: 'Gate', hint: 'Click a wall to place a door on it' },
+  { id: 'PARTITION', label: 'Partition', hint: 'Click one wall then another to divide the room' },
 ];
 
 export function Toolbar({
@@ -33,6 +36,7 @@ export function Toolbar({
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
   const scene = useEditorStore((s) => s.scene);
   const dirty = useEditorStore((s) => s.dirty);
+  const drawing = useEditorStore((s) => s.drawing);
 
   const temporal = useEditorStore.temporal;
 
@@ -82,6 +86,14 @@ export function Toolbar({
 
       <span style={{ flex: 1 }} />
 
+      {drawing && (
+        <span style={{ color: 'var(--accent)', fontSize: 12 }}>
+          {drawing.kind === 'POLYGON'
+            ? `${drawing.points.length} point${drawing.points.length === 1 ? '' : 's'} — click the first to close, Esc to cancel`
+            : 'click the opposite wall to finish the partition, Esc to cancel'}
+        </span>
+      )}
+
       <span style={{ color: 'var(--muted)', fontSize: 12 }}>
         {scene ? `${scene.status} rev ${scene.revision}` : 'no layout'}
         {dirty && <strong style={{ color: 'var(--accent)' }}> &middot; unsaved</strong>}
@@ -91,8 +103,8 @@ export function Toolbar({
       {canEdit && (
         <>
           <button onClick={onValidate} disabled={busy !== null}>Validate</button>
-          <button onClick={onSave} disabled={busy !== null || !dirty}>
-            {busy === 'saving' ? 'Saving...' : 'Save'}
+          <button onClick={onSave} disabled={busy !== null || !dirty} title="Autosaves a few seconds after you stop editing">
+            {busy === 'saving' ? 'Saving...' : dirty ? 'Save' : 'Saved'}
           </button>
           <button data-variant="primary" onClick={onPublish} disabled={busy !== null}>
             {busy === 'publishing' ? 'Publishing...' : 'Publish'}

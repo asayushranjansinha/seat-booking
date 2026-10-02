@@ -35,7 +35,21 @@ public record SceneDto(
             BigDecimal height,
             BigDecimal hourlyRate,
             @Valid List<PartitionDto> partitions,
-            @Valid List<GateDto> gates) {}
+            @Valid List<GateDto> gates,
+            /**
+             * Areas the partitions divide this room into. DERIVED on read, never stored
+             * and never accepted from a client: the zones are a function of the geometry,
+             * so persisting them would only create a cache that can disagree with the plan.
+             */
+            List<SubZones.SubZone> subZones) {
+
+        /** Constructor for incoming scenes, which do not carry derived fields. */
+        public RoomDto(UUID id, String name, JsonNode shape, JsonNode transform,
+                       BigDecimal height, BigDecimal hourlyRate,
+                       List<PartitionDto> partitions, List<GateDto> gates) {
+            this(id, name, shape, transform, height, hourlyRate, partitions, gates, List.of());
+        }
+    }
 
     public record PartitionDto(UUID id, @NotNull JsonNode polyline, BigDecimal thickness) {}
 

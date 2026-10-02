@@ -4,10 +4,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useEffect, useRef } from 'react';
 import { applyTransform, composeTransform, invertTransform } from '@seat-booking/geometry';
-import { useEditorStore, type Selection } from '@/state/editorStore';
+import { snapValue, useEditorStore, type Selection } from '@/state/editorStore';
 import type { SceneJson, TransformJson } from '@/api/types';
-import { buildSceneGraph, disposeGraph, type PickData } from './sceneGraph';
+import { buildSceneGraph, disposeGraph, type HandleData, type PickData } from './sceneGraph';
 import { ringFor } from './shapeToThree';
+import { nearestWall, roomAt, snapToGeometry, SNAP_DISTANCE } from './snapping';
+import type { ShapeJson } from '@/api/types';
 
 const IDENTITY: TransformJson = { x: 0, y: 0, rot: 0 };
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
@@ -28,7 +30,12 @@ const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
  */
 export function EditorCanvas() {
   const host = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ selection: NonNullable<Selection>; offset: THREE.Vector2 } | null>(null);
+  const dragRef = useRef<
+    | { mode: 'move'; selection: NonNullable<Selection>; offset: THREE.Vector2 }
+    | { mode: 'handle'; handle: HandleData; parent: TransformJson }
+    | null
+  >(null);
+  const guidesRef = useRef<Array<[{ x: number; y: number }, { x: number; y: number }]>>([]);
 
   useEffect(() => {
     const el = host.current;
@@ -152,6 +159,32 @@ export function EditorCanvas() {
       return new THREE.Vector2(p.x, p.y);
     };
 
+    /**
+     * Resize a shape from a grip dragged to `p`, expressed in the shape's own frame.
+     *
+     * <p>Snapping applies to the resulting DIMENSION, not to the grip position: an admin
+     * sizing a room wants a 12.00m wall, and snapping the grip to the grid gives
+     * 11.97m whenever the room's centre is off-grid.
+     */
+    const resizedShape = (shape: ShapeJson, index: number, p: THREE.Vector2): ShapeJson => {
+      const { gridSnap, snapEnabled } = useEditorStore.getState();
+      const min = 0.2;
+      const fit = (v: number) => Math.max(min, snapValue(Math.abs(v), gridSnap, snapEnabled));
+      switch (shape.kind) {
+        case 'RECT':
+          // The grip is a corner, so its distance from the centre is the half-extent.
+          return { kind: 'RECT', w: fit(p.x * 2), h: fit(p.y * 2) };
+        case 'CIRCLE':
+          return { kind: 'CIRCLE', r: fit(Math.hypot(p.x, p.y)) };
+        case 'ELLIPSE':
+          return index === 0
+            ? { kind: 'ELLIPSE', rx: fit(p.x), ry: shape.ry }
+            : { kind: 'ELLIPSE', rx: shape.rx, ry: fit(p.y) };
+        default:
+          return shape;
+      }
+    };
+
     const onPointerDown = (event: PointerEvent) => {
       const state = useEditorStore.getState();
       const s = state.scene;
@@ -159,28 +192,92 @@ export function EditorCanvas() {
       const world = toWorld(event);
 
       if (state.tool !== 'SELECT') {
-        if (state.tool === 'ROOM_RECT') state.addRoom({ kind: 'RECT', w: 8, h: 6 }, world);
-        else if (state.tool === 'ROOM_CIRCLE') state.addRoom({ kind: 'CIRCLE', r: 3.5 }, world);
-        else {
-          const room = s.rooms.find(
-            (r) => Math.hypot(world.x - r.transform.x, world.y - r.transform.y) < 14,
-          );
-          if (room) {
+        switch (state.tool) {
+          case 'ROOM_RECT':
+            state.addRoom({ kind: 'RECT', w: 8, h: 6 }, world);
+            return;
+          case 'ROOM_CIRCLE':
+            state.addRoom({ kind: 'CIRCLE', r: 3.5 }, world);
+            return;
+          case 'ROOM_POLY': {
+            // The pen traces one vertex per click. Clicking the first point again closes
+            // the outline, which is how every drawing tool people already know behaves.
+            const pen = state.drawing;
+            const p = { x: world.x, y: world.y };
+            if (pen?.kind !== 'POLYGON') {
+              state.startPolygon(p);
+            } else if (
+              pen.points.length >= 3 &&
+              Math.hypot(p.x - pen.points[0]!.x, p.y - pen.points[0]!.y) < 0.4
+            ) {
+              state.commitPolygon();
+            } else {
+              state.addPolygonPoint(p);
+            }
+            return;
+          }
+          case 'TABLE_RECT':
+          case 'TABLE_ROUND': {
+            const room = roomAt(s, world);
+            if (!room) return; // a table belongs to a room, so a click outside one does nothing
             const local = applyTransform(invertTransform(room.transform), { x: world.x, y: world.y });
             state.addTable(
               room.id,
               state.tool === 'TABLE_RECT' ? { kind: 'RECT', w: 2.4, h: 1.2 } : { kind: 'CIRCLE', r: 0.9 },
               local,
             );
+            return;
           }
+          case 'GATE': {
+            const wall = nearestWall(s, world, 1.0);
+            if (!wall) return;
+            // Keep the gate clear of the corners: offsetT is its centre, so half its
+            // width has to fit either side or the validator will reject it.
+            const width = Math.min(1.2, wall.wallLength * 0.8);
+            const half = width / 2 / wall.wallLength;
+            const t = Math.min(1 - half, Math.max(half, wall.t));
+            state.addGate(wall.roomId, wall.edgeIdx, t, width, 'DOOR');
+            return;
+          }
+          case 'PARTITION': {
+            // Both ends must meet the room boundary, so each click snaps to the nearest
+            // wall rather than landing wherever the pointer happened to be.
+            const wall = nearestWall(s, world, 1.5);
+            if (!wall) return;
+            const room = s.rooms.find((r) => r.id === wall.roomId);
+            if (!room) return;
+            const localPoint = applyTransform(invertTransform(room.transform), wall.point);
+            if (state.drawing?.kind !== 'PARTITION') {
+              state.startPartition(room.id, localPoint);
+            } else if (state.drawing.roomId === room.id) {
+              state.commitPartition(localPoint);
+            }
+            return;
+          }
+          default:
+            return;
         }
-        return;
       }
 
       // Pick the most SPECIFIC thing under the cursor, not the nearest. A seat sits on a
       // table which sits in a room, and all three are under the pointer at once; depth
       // order is a fragile way to choose between them, and the one the admin means is
       // always the innermost.
+      // Grips win over everything: they sit on top of the entity they belong to, and a
+      // click on one is never meant for the shape underneath.
+      graph?.updateMatrixWorld(true);
+      const gripHit = graph
+        ? raycaster.intersectObjects(graph.children, true)
+            .find((h) => (h.object.userData as { handle?: HandleData }).handle)
+        : undefined;
+      if (gripHit) {
+        const handle = (gripHit.object.userData as { handle: HandleData }).handle;
+        dragRef.current = { mode: 'handle', handle, parent: parentWorld(s, handle.selection) };
+        state.beginDrag();
+        renderer.domElement.setPointerCapture(event.pointerId);
+        return;
+      }
+
       const specificity = { seat: 0, furniture: 1, room: 2 } as const;
       // Raycasting reads matrixWorld, which three.js refreshes during render. A graph
       // rebuilt since the last frame still carries identity matrices, so every room
@@ -205,6 +302,7 @@ export function EditorCanvas() {
 
       const local = toLocal(s, pick.selection, world);
       dragRef.current = {
+        mode: 'move',
         selection: pick.selection,
         offset: new THREE.Vector2(local.x - pick.local.x, local.y - pick.local.y),
       };
@@ -213,17 +311,53 @@ export function EditorCanvas() {
     };
 
     const onPointerMove = (event: PointerEvent) => {
-      const drag = dragRef.current;
-      if (!drag) return;
       const state = useEditorStore.getState();
-      if (!state.scene) return;
-      const local = toLocal(state.scene, drag.selection, toWorld(event));
+      const s = state.scene;
+      if (!s) return;
+      const world = toWorld(event);
+      const drag = dragRef.current;
+
+      if (!drag) {
+        // Only track the cursor while a stroke is open; otherwise every mouse move would
+        // rebuild the scene graph for nothing.
+        if (state.drawing) state.setCursor({ x: world.x, y: world.y });
+        return;
+      }
+
+      if (drag.mode === 'handle') {
+        const { handle, parent } = drag;
+        if (handle.kind === 'rotate') {
+          // The grip starts directly above the entity, so the angle to it IS the heading
+          // once the quarter turn is taken back out.
+          const inParent = applyTransform(invertTransform(parent), { x: world.x, y: world.y });
+          const angle = Math.atan2(inParent.y - handle.local.y, inParent.x - handle.local.x) - Math.PI / 2;
+          state.rotateEntity(handle.selection, angle);
+        } else {
+          const entityWorld = composeTransform(parent, handle.local);
+          const inEntity = applyTransform(invertTransform(entityWorld), { x: world.x, y: world.y });
+          state.resizeShape(
+            handle.selection,
+            resizedShape(handle.shape, handle.index, new THREE.Vector2(inEntity.x, inEntity.y)),
+          );
+        }
+        return;
+      }
+
+      // Walls and table edges pull the drag before the grid does, because a table is
+      // meant to sit against a wall and the wall is rarely on a 0.25m grid.
+      const snapped = state.snapEnabled
+        ? snapToGeometry(s, { x: world.x, y: world.y }, drag.selection.id)
+        : { point: { x: world.x, y: world.y }, guides: [] };
+      guidesRef.current = snapped.guides;
+
+      const local = toLocal(s, drag.selection, new THREE.Vector2(snapped.point.x, snapped.point.y));
       state.moveEntity(drag.selection, local.x - drag.offset.x, local.y - drag.offset.y);
     };
 
     const onPointerUp = (event: PointerEvent) => {
       if (!dragRef.current) return;
       dragRef.current = null;
+      guidesRef.current = [];
       // Ending the drag re-arms history, so the whole gesture is ONE undo step rather
       // than one per pointer move.
       useEditorStore.getState().endDrag();
@@ -239,7 +373,7 @@ export function EditorCanvas() {
     // fraction of a millisecond, and it keeps the renderer a pure function of the store.
     let lastKey = '';
     const rebuild = () => {
-      const { scene: s, selection, violations, view } = useEditorStore.getState();
+      const { scene: s, selection, violations, view, drawing, cursor } = useEditorStore.getState();
       if (!s) return;
       const key = [
         s.planVersionId,
@@ -251,7 +385,10 @@ export function EditorCanvas() {
         s.rooms.length, s.furniture.length, s.seats.length,
         s.seats.map((x) => `${x.localTransform.x.toFixed(4)},${x.localTransform.y.toFixed(4)},${x.localTransform.rot.toFixed(4)},${x.override ? 1 : 0}`).join('|'),
         s.furniture.map((f) => `${f.transform.x},${f.transform.y},${f.transform.rot},${JSON.stringify(f.shape)}`).join('|'),
-        s.rooms.map((r) => `${r.transform.x},${r.transform.y},${r.transform.rot},${JSON.stringify(r.shape)}`).join('|'),
+        s.rooms.map((r) => `${r.transform.x},${r.transform.y},${r.transform.rot},${JSON.stringify(r.shape)},${r.gates.length},${r.partitions.length},${(r.subZones ?? []).length}`).join('|'),
+        JSON.stringify(drawing),
+        drawing ? JSON.stringify(cursor) : '-',
+        JSON.stringify(guidesRef.current),
       ].join('#');
       if (key === lastKey) return;
       lastKey = key;
@@ -263,7 +400,16 @@ export function EditorCanvas() {
       const invalid = new Set(
         violations.filter((v) => v.entityId).map((v) => v.entityId as string),
       );
-      graph = buildSceneGraph(s, selection, invalid, view);
+      graph = buildSceneGraph(s, {
+        selection,
+        invalidIds: invalid,
+        view,
+        drawing,
+        cursor,
+        snapGuides: guidesRef.current,
+        // Grips are sized in world metres, so they have to shrink as the view zooms in.
+        handleScale: orthoSpan / ortho.zoom / 42,
+      });
       scene.add(graph);
 
       if (!framed) {

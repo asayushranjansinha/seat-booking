@@ -92,12 +92,21 @@ public class LayoutService {
         }
 
         List<SceneDto.RoomDto> roomDtos = roomRows.stream()
-                .map(r -> new SceneDto.RoomDto(
-                        r.getId(), r.getName(),
-                        GeometryJson.parse(r.getShape()), GeometryJson.parse(r.getTransform()),
-                        r.getHeight(), r.getHourlyRate(),
-                        partitionsByRoom.getOrDefault(r.getId(), List.of()),
-                        gatesByRoom.getOrDefault(r.getId(), List.of())))
+                .map(r -> {
+                    List<SceneDto.PartitionDto> parts =
+                            partitionsByRoom.getOrDefault(r.getId(), List.of());
+                    // Partitions are stored room-local, so the zones derive in room-local
+                    // space too and render inside the room's own group unchanged.
+                    List<SubZones.SubZone> zones = SubZones.derive(
+                            GeometryJson.shape(GeometryJson.parse(r.getShape())),
+                            Transform.IDENTITY,
+                            parts.stream().map(p -> GeometryJson.points(p.polyline())).toList());
+                    return new SceneDto.RoomDto(
+                            r.getId(), r.getName(),
+                            GeometryJson.parse(r.getShape()), GeometryJson.parse(r.getTransform()),
+                            r.getHeight(), r.getHourlyRate(), parts,
+                            gatesByRoom.getOrDefault(r.getId(), List.of()), zones);
+                })
                 .toList();
 
         List<SceneDto.FurnitureDto> furnitureDtos = furniture.findByPlanVersionId(planVersionId).stream()
@@ -148,7 +157,7 @@ public class LayoutService {
         // An id belonging to another version (which is exactly what a cloned draft carries)
         // must be remapped, otherwise save() merges onto that other version's row and
         // silently relocates it, destroying the version it came from.
-        IdResolver ids = new IdResolver(ownedIds(planVersionId));
+        IdResolver ids = new IdResolver(ownedIds(planVersionId), idsUsedByOtherVersions(planVersionId, scene));
 
         // Rooms cascade to partitions, gates, furniture and seats, so one delete clears
         // the graph for this version.
@@ -403,6 +412,41 @@ public class LayoutService {
             row.setWorld(origin.x(), origin.y(), world.rot());
             seats.save(row);
         }
+    }
+
+    /**
+     * Of the ids this scene carries, the ones already used by a DIFFERENT plan version.
+     *
+     * <p>These are the only ids that must be rewritten. Asking the database which of the
+     * incoming ids actually collide is one query, and it keeps a freshly drawn room's own
+     * uuid intact so the editor's selection still resolves after the save.
+     */
+    private Set<UUID> idsUsedByOtherVersions(UUID planVersionId, SceneDto scene) {
+        List<UUID> incoming = new ArrayList<>();
+        for (SceneDto.RoomDto r : nullSafe(scene.rooms())) {
+            if (r.id() != null) incoming.add(r.id());
+            nullSafe(r.partitions()).forEach(p -> { if (p.id() != null) incoming.add(p.id()); });
+            nullSafe(r.gates()).forEach(g -> { if (g.id() != null) incoming.add(g.id()); });
+        }
+        nullSafe(scene.furniture()).forEach(f -> { if (f.id() != null) incoming.add(f.id()); });
+        nullSafe(scene.seats()).forEach(s -> { if (s.id() != null) incoming.add(s.id()); });
+        if (incoming.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(jdbc.sql("""
+                SELECT id FROM (
+                    SELECT id, plan_version_id FROM room
+                    UNION ALL SELECT id, plan_version_id FROM furniture
+                    UNION ALL SELECT id, plan_version_id FROM seat
+                    UNION ALL SELECT p.id, r.plan_version_id FROM room_partition p JOIN room r ON r.id = p.room_id
+                    UNION ALL SELECT g.id, r.plan_version_id FROM gate g JOIN room r ON r.id = g.room_id
+                ) owned
+                WHERE owned.plan_version_id <> :planVersionId AND owned.id IN (:ids)
+                """)
+                .param("planVersionId", planVersionId)
+                .param("ids", incoming)
+                .query(UUID.class)
+                .list());
     }
 
     /** Every child id currently belonging to this plan version. */
