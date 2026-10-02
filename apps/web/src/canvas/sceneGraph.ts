@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { SceneJson, ShapeJson } from '@/api/types';
 import type { Selection, SelectionItem } from '@/state/editorStore';
-import { extrudedGeometry, footprintGeometry, outlinePoints, ringFor, wallGeometry } from './shapeToThree';
+import { footprintGeometry, outlinePoints, ringFor, wallGeometry } from './shapeToThree';
+import { chairMesh, doorMesh, partitionMesh, tableMesh } from './furniture';
 import type { Drawing } from '@/state/editorStore';
 
 /**
@@ -26,6 +27,8 @@ export const COLORS = {
   gate: 0xf0c24a,
   emergency: 0xe0646f,
   partition: 0x8792a6,
+  tableLip: 0x2f3f55,
+  chairTrim: 0x2b6b4f,
   subZone: 0x2a3140,
   subZoneEdge: 0x47526b,
   guide: 0xf0c24a,
@@ -48,6 +51,26 @@ function lineFrom(points: THREE.Vector3[], color: number, width = 1): THREE.Line
   return new THREE.Line(geometry, new THREE.LineBasicMaterial({ color, linewidth: width }));
 }
 
+/**
+ * An invisible footprint that exists only to be clicked.
+ *
+ * <p>The drawn furniture is legs and backs and arcs now, and none of that is a sane
+ * click target — nobody should have to hit a chair leg, or the gap between four of them.
+ * So the old flat footprint stays, transparent, and carries the pick data.
+ *
+ * <p>It must stay VISIBLE in the three.js sense: an invisible object is skipped by the
+ * raycaster entirely, which would make the whole plan unclickable. Opacity does the
+ * hiding; `visible` would do too much of it.
+ */
+function pickTarget(shape: ShapeJson, z: number): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    footprintGeometry(shape),
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+  );
+  mesh.position.z = z;
+  return mesh;
+}
+
 function flatMesh(shape: ShapeJson, color: number, z: number): THREE.Mesh {
   const mesh = new THREE.Mesh(
     footprintGeometry(shape),
@@ -55,18 +78,6 @@ function flatMesh(shape: ShapeJson, color: number, z: number): THREE.Mesh {
   );
   mesh.position.z = z;
   return mesh;
-}
-
-function solidMesh(shape: ShapeJson, height: number, color: number, opacity = 1): THREE.Mesh {
-  return new THREE.Mesh(
-    extrudedGeometry(shape, height),
-    new THREE.MeshStandardMaterial({
-      color,
-      transparent: opacity < 1,
-      opacity,
-      side: THREE.DoubleSide,
-    }),
-  );
 }
 
 /**
@@ -156,12 +167,15 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     }
 
     for (const partition of room.partitions) {
-      group.add(
-        lineFrom(
-          partition.polyline.map(([x, y]) => new THREE.Vector3(x, y, 0.01)),
-          COLORS.partition,
-        ),
-      );
+      group.add(partitionMesh(
+        partition.polyline,
+        partition.thickness,
+        // Shoulder height. A partition that reached the ceiling would be a wall, and the
+        // 3D view would turn into a maze of boxes you cannot see over.
+        Math.min(1.6, room.height * 0.6),
+        COLORS.partition,
+        view,
+      ));
     }
 
     const ring = ringFor(room.shape);
@@ -175,15 +189,24 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
       const half = gate.width / 2 / len;
       const t0 = gate.offsetT - half;
       const t1 = gate.offsetT + half;
-      group.add(
-        lineFrom(
-          [
-            new THREE.Vector3(a.x + dx * t0, a.y + dy * t0, 0.03),
-            new THREE.Vector3(a.x + dx * t1, a.y + dy * t1, 0.03),
-          ],
-          gate.type === 'EMERGENCY' ? COLORS.emergency : COLORS.gate,
-        ),
-      );
+      const colour = gate.type === 'EMERGENCY' ? COLORS.emergency : COLORS.gate;
+
+      // The opening: the stretch of wall the door occupies, drawn over the wall so the
+      // wall appears to stop there.
+      group.add(lineFrom(
+        [
+          new THREE.Vector3(a.x + dx * t0, a.y + dy * t0, 0.03),
+          new THREE.Vector3(a.x + dx * t1, a.y + dy * t1, 0.03),
+        ],
+        colour,
+      ));
+
+      // Hinged at the first edge of the opening and swinging into the room. The wall
+      // direction is +x for the symbol, so the whole thing is turned to match the wall.
+      const door = doorMesh(gate.width, colour, view);
+      door.position.set(a.x + dx * t0, a.y + dy * t0, 0);
+      door.rotation.z = Math.atan2(dy, dx);
+      group.add(door);
     }
   }
 
@@ -200,14 +223,16 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
     const invalid = invalidIds.has(table.id);
     const colour = invalid ? COLORS.invalid : selected ? COLORS.tableSelected : COLORS.table;
 
-    const mesh = view === '3D'
-      ? solidMesh(table.shape, table.height, colour)
-      : flatMesh(table.shape, colour, 0.01);
-    mesh.userData.pick = {
+    const furnitureMesh = tableMesh(table.shape, colour, COLORS.tableLip, view);
+    // The pick target stays the flat footprint: a leg is a hard thing to click, and
+    // clicking the gap between four of them should still find the table.
+    const target = pickTarget(table.shape, 0.005);
+    target.userData.pick = {
       selection: { type: 'furniture', id: table.id },
       local: table.transform,
     } satisfies PickData;
-    group.add(mesh);
+    group.add(target);
+    group.add(furnitureMesh);
     group.add(lineFrom(outlinePoints(table.shape), selected ? 0x8dc2ff : 0x4a6c92));
   }
 
@@ -229,23 +254,16 @@ export function buildSceneGraph(scene: SceneJson, options: BuildOptions): THREE.
           ? COLORS.seatOverride
           : COLORS.seat;
 
-    const mesh = view === '3D'
-      ? solidMesh(seat.shape, 0.45, colour)
-      : flatMesh(seat.shape, colour, 0.04);
-    mesh.userData.pick = {
+    group.add(chairMesh(seat.shape, colour, selected ? 0xffffff : COLORS.chairTrim, view));
+
+    // The pick target is the flat pad, for the same reason as the table: a chair leg is
+    // not something anyone should have to hit.
+    const target = pickTarget(seat.shape, 0.035);
+    target.userData.pick = {
       selection: { type: 'seat', id: seat.id },
       local: seat.localTransform,
     } satisfies PickData;
-    group.add(mesh);
-
-    // A stub pointing the way the seat faces, so "every seat faces its table" is
-    // something you can see rather than something you have to trust.
-    group.add(
-      lineFrom(
-        [new THREE.Vector3(0, 0, 0.05), new THREE.Vector3(0.2, 0, 0.05)],
-        selected ? 0xffffff : 0x0f1115,
-      ),
-    );
+    group.add(target);
   }
 
   // Grips for whatever is selected, in 2D only, and never while booking: a seat's
