@@ -29,6 +29,19 @@ Sign in at http://localhost:3000 as `admin@demo.test` / `password`
 ./tools/demo-race.sh     # 16 simultaneous bookings at one seat: 1 wins, 15 refused
 ```
 
+## Building
+
+```bash
+cd apps/web
+npm run dev           # :3000
+npm run build:check   # verification build into .next-check, safe while dev is running
+npm run clean         # if the page ever goes blank: clears both build dirs
+```
+
+`next build` and `next dev` share `.next`, so building while the dev server is live
+overwrites the chunks it is serving and every page renders blank with
+`__webpack_modules__[moduleId] is not a function`. `build:check` writes elsewhere.
+
 ## Tests
 
 ```bash

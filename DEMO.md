@@ -216,6 +216,7 @@ Yes — every table carries an organisation from day one.
 | Symptom | Fix |
 | --- | --- |
 | Canvas is blank | Reload the page. If still blank, check `:8080` is up. |
+| **Whole page blank/white** | The dev build cache is corrupt. `cd apps/web && npm run clean && npm run dev`. Usually caused by running `next build` while `next dev` is live — use `npm run build:check` instead. |
 | "This floor has no published layout" | `./tools/demo-reset.sh` |
 | Publish refused unexpectedly | Press **Check** — the bar at the bottom lists exactly what is wrong. |
 | Emails not arriving | `docker compose ps` — Mailpit must be running. |

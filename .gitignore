@@ -12,3 +12,4 @@ target/
 .vscode/
 coverage/
 test-plans/
+.next-check/
