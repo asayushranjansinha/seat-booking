@@ -212,15 +212,15 @@ function GroupSelection({ canEdit }: { canEdit: boolean }) {
       onDelete={canEdit ? deleteSelected : undefined}
     >
       <div className="space-y-2">
-        <Button variant="outline" className="w-full justify-start" disabled={!canEdit || tables < 3}
+        <Button variant="outline" className="w-full justify-start" disabled={!canEdit || tables < 2}
           onClick={() => {
             const moved = spaceEvenly();
             toast[moved ? 'success' : 'info'](
               moved ? 'Spaced evenly' : 'Already evenly spaced',
               {
                 description: moved
-                  ? 'The two at the ends stayed put; the gaps between are now equal.'
-                  : 'The gaps between these are already the same.',
+                  ? 'Every gap the same, including the floor against each wall.'
+                  : 'These are already evenly spaced in the room.',
               },
             );
           }}>
@@ -239,12 +239,10 @@ function GroupSelection({ canEdit }: { canEdit: boolean }) {
           <AlignVerticalSpaceAround className="size-4" />
           Line up
         </Button>
-        {tables < 3 && tables >= 2 && (
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Spacing needs three or more: with two there is only one gap, and nothing to
-            even it against.
-          </p>
-        )}
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Spacing divides the floor this row sits on — the partition if there is one —
+          leaving the same gap against each wall as between the tables.
+        </p>
       </div>
 
       <Separator />

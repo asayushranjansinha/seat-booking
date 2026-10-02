@@ -10,6 +10,8 @@
  * what actually touches. Equal gaps measured between table edges leaves chair rings
  * overlapping wherever the tables are different sizes, which is most floors.
  */
+import { pointInRing } from '@seat-booking/geometry';
+import { usableArea, zonesOf } from '@/editor/arrange';
 import { centreX, centreY, height, union, width, worldBox, type Box } from '@/editor/extent';
 import type { SceneJson } from '@/api/types';
 import type { SelectionItem } from '@/state/editorStore';
@@ -60,15 +62,53 @@ export function axisOf(boxes: readonly Box[]): Axis {
 }
 
 /**
- * Equalise the gaps, leaving the two at the ends alone.
+ * The stretch of floor a selection is being spaced within.
  *
- * <p>Returns an empty list when there is nothing to do — fewer than three things, or
- * everything already evenly spaced — so the caller can say "already even" rather than
- * reporting a change it did not make.
+ * <p>The partition a row sits behind, or the room when there is no partition. Measured as
+ * the largest rectangle that actually fits inside the outline, so an L-shaped room does
+ * not offer up the bite out of its corner as somewhere to put a table.
+ */
+function containerOf(scene: SceneJson, measured: readonly Measured[]): Box | null {
+  const first = measured.find((m) => m.item.type === 'furniture');
+  if (!first) return null;
+  const table = scene.furniture.find((f) => f.id === first.item.id);
+  const room = scene.rooms.find((r) => r.id === table?.roomId);
+  if (!room) return null;
+
+  // Zone rings are stored in the room's frame; the boxes being spaced are in world. With
+  // the room at an angle there is no axis-aligned answer at all, so spacing falls back to
+  // the selection's own span rather than inventing one.
+  if (room.transform.rot !== 0) return null;
+
+  const centre = { x: centreX(first.box) - room.transform.x, y: centreY(first.box) - room.transform.y };
+  const zones = zonesOf(room);
+  const zone = zones.find((z) => pointInRing(z.ring, centre)) ?? zones[0];
+  if (!zone) return null;
+
+  const local = usableArea(zone.ring);
+  return {
+    minX: local.minX + room.transform.x,
+    maxX: local.maxX + room.transform.x,
+    minY: local.minY + room.transform.y,
+    maxY: local.maxY + room.transform.y,
+  };
+}
+
+/**
+ * Space the selection evenly across the floor it sits on.
+ *
+ * <p>Every gap the same: wall to the first, between each pair, the last to the wall. An
+ * earlier version equalised only the gaps BETWEEN things and pinned the two at the ends,
+ * which is what Figma does to a selection floating on a canvas. On a floor plan it is the
+ * wrong answer and it looks wrong: the tables end up perfectly spaced from each other and
+ * visibly off-centre in the room, which is exactly the complaint it was meant to fix.
+ *
+ * <p>Falls back to holding the ends when there is no container to measure against — a
+ * selection spanning two rooms, or sitting in a room that has been rotated.
  */
 export function spaceEvenly(scene: SceneJson, selection: readonly SelectionItem[]): Shift[] {
   const measured = measure(scene, selection);
-  if (measured.length < 3) return [];
+  if (measured.length < 2) return [];
 
   const axis = axisOf(measured.map((m) => m.box));
   const lo = (b: Box) => (axis === 'x' ? b.minX : b.minY);
@@ -76,15 +116,25 @@ export function spaceEvenly(scene: SceneJson, selection: readonly SelectionItem[
   const size = (b: Box) => hi(b) - lo(b);
 
   const ordered = [...measured].sort((a, b) => lo(a.box) - lo(b.box));
-  const span = hi(ordered[ordered.length - 1]!.box) - lo(ordered[0]!.box);
   const occupied = ordered.reduce((sum, m) => sum + size(m.box), 0);
-  // Negative when the things already overlap each other. Spacing cannot fix that — it
-  // would have to move the ends — so it lays them edge to edge and leaves the rest to
-  // the person, who can see they have asked for more room than the row has.
-  const gap = Math.max(0, (span - occupied) / (ordered.length - 1));
+
+  const container = containerOf(scene, ordered);
+  // Spacing inside the room divides the floor into n + 1 gaps — one against each wall and
+  // one between each pair. Without a container there is no wall to measure to, so the
+  // selection's own span is divided into the n - 1 gaps between its members instead, and
+  // the outermost two stay put.
+  const sameRoomSpan = container
+    ? hi(container) - lo(container)
+    : hi(ordered[ordered.length - 1]!.box) - lo(ordered[0]!.box);
+  const slots = container ? ordered.length + 1 : ordered.length - 1;
+  if (slots <= 0) return [];
+
+  // Negative when the things do not fit. Spacing cannot conjure room, so they go edge to
+  // edge from the start and the person can see they have asked for more than there is.
+  const gap = Math.max(0, (sameRoomSpan - occupied) / slots);
 
   const shifts: Shift[] = [];
-  let cursor = lo(ordered[0]!.box);
+  let cursor = container ? lo(container) + gap : lo(ordered[0]!.box);
   for (const m of ordered) {
     const delta = cursor - lo(m.box);
     if (Math.abs(delta) > 1e-9) {

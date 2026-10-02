@@ -163,7 +163,7 @@ function largestTrueRect(grid: boolean[][], cols: number, rows: number) {
  * rectangular room would lose up to a cell of width to the discretisation and the tables
  * would sit very slightly off-centre forever.
  */
-function usableArea(ring: ReadonlyArray<{ x: number; y: number }>): Box {
+export function usableArea(ring: ReadonlyArray<{ x: number; y: number }>): Box {
   const box = boundsOf(ring);
   if (rectInsideRing(ring, box)) return box; // the common case: a rectangular room
 
@@ -244,7 +244,7 @@ function columnsFor(count: number, zone: Box, cellW: number, cellH: number): num
 }
 
 /** The ring of each sub-zone, in room-local coordinates, or the room itself if undivided. */
-function zonesOf(room: RoomJson): { name: string; ring: ReadonlyArray<{ x: number; y: number }> }[] {
+export function zonesOf(room: RoomJson): { name: string; ring: ReadonlyArray<{ x: number; y: number }> }[] {
   const subZones = room.subZones ?? [];
   if (subZones.length > 1) {
     return subZones.map((z) => ({ name: z.name, ring: ringFromJson(z.ring) }));
