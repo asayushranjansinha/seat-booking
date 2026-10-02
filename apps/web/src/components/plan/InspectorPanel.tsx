@@ -668,7 +668,10 @@ function ShapeFields({
   }
   return (
     <Field label="Outline">
-      <p className="text-sm text-muted-foreground">Traced with the pen — {shape.points.length} corners</p>
+      <p className="text-sm text-muted-foreground">
+        Traced with the pen — {shape.points.length} corners. Drag a corner grip to scale
+        the whole outline; hold Shift to stretch it one way.
+      </p>
     </Field>
   );
 }

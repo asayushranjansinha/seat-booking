@@ -447,6 +447,18 @@ export function buildHandles(
     corners.push({ x: shape.r, y: 0, index: 0 });
   } else if (shape.kind === 'ELLIPSE') {
     corners.push({ x: shape.rx, y: 0, index: 0 }, { x: 0, y: shape.ry, index: 1 });
+  } else if (shape.kind === 'POLYGON') {
+    // A traced outline had no grips at all, so a pen-drawn room was the one thing on the
+    // plan that could never be resized — you had to delete it and trace it again. Grips
+    // on its extent scale the whole outline.
+    const hx = Math.max(...shape.points.map(([x]) => Math.abs(x)), 0.2);
+    const hy = Math.max(...shape.points.map(([, y]) => Math.abs(y)), 0.2);
+    corners.push(
+      { x: -hx, y: -hy, index: 0 },
+      { x: hx, y: -hy, index: 1 },
+      { x: hx, y: hy, index: 2 },
+      { x: -hx, y: hy, index: 3 },
+    );
   }
 
   for (const corner of corners) {
@@ -460,7 +472,9 @@ export function buildHandles(
 
   // Rotation grip, held off the top edge so it never sits under a resize grip.
   const reach =
-    (shape.kind === 'RECT' ? shape.h / 2
+    (shape.kind === 'POLYGON'
+      ? Math.max(...shape.points.map(([, y]) => Math.abs(y)), 0.2)
+      : shape.kind === 'RECT' ? shape.h / 2
       : shape.kind === 'CIRCLE' ? shape.r
         : shape.kind === 'ELLIPSE' ? shape.ry
           : 1) + 0.6 * scale;

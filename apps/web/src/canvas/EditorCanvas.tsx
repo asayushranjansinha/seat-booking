@@ -4,7 +4,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { useEffect, useRef } from 'react';
 import { applyTransform, composeTransform, invertTransform } from '@seat-booking/geometry';
-import { snapValue, useEditorStore, type Selection, type SelectionItem } from '@/state/editorStore';
+import { useEditorStore, type Selection, type SelectionItem } from '@/state/editorStore';
+import { resizedShape } from '@/editor/resize';
 import { pointer as pointerWorld } from '@/editor/pointer';
 import type { SceneJson, TransformJson } from '@/api/types';
 import { buildSceneGraph, disposeGraph, type HandleData, type PickData } from './sceneGraph';
@@ -308,25 +309,6 @@ export function EditorCanvas() {
      * sizing a room wants a 12.00m wall, and snapping the grip to the grid gives
      * 11.97m whenever the room's centre is off-grid.
      */
-    const resizedShape = (shape: ShapeJson, index: number, p: THREE.Vector2): ShapeJson => {
-      const { gridSnap, snapEnabled } = useEditorStore.getState();
-      const min = 0.2;
-      const fit = (v: number) => Math.max(min, snapValue(Math.abs(v), gridSnap, snapEnabled));
-      switch (shape.kind) {
-        case 'RECT':
-          // The grip is a corner, so its distance from the centre is the half-extent.
-          return { kind: 'RECT', w: fit(p.x * 2), h: fit(p.y * 2) };
-        case 'CIRCLE':
-          return { kind: 'CIRCLE', r: fit(Math.hypot(p.x, p.y)) };
-        case 'ELLIPSE':
-          return index === 0
-            ? { kind: 'ELLIPSE', rx: fit(p.x), ry: shape.ry }
-            : { kind: 'ELLIPSE', rx: shape.rx, ry: fit(p.y) };
-        default:
-          return shape;
-      }
-    };
-
     /** The most specific thing under the pointer, or nothing. */
     const pickAt = (held: ReadonlyArray<SelectionItem>) => {
       // Raycasting reads matrixWorld, which three.js refreshes during render. A graph
@@ -571,7 +553,11 @@ export function EditorCanvas() {
           const inEntity = applyTransform(invertTransform(entityWorld), { x: world.x, y: world.y });
           state.resizeShape(
             handle.selection,
-            resizedShape(handle.shape, handle.index, new THREE.Vector2(inEntity.x, inEntity.y)),
+            resizedShape(handle.shape, handle.index, { x: inEntity.x, y: inEntity.y }, {
+              free: event.shiftKey,
+              gridSnap: state.gridSnap,
+              snapEnabled: state.snapEnabled,
+            }),
           );
         }
         return;
