@@ -150,6 +150,9 @@ export function EditorCanvas() {
       const overEntity = hits.some((h) => (h.object.userData as { pick?: PickData }).pick);
       if (state.mode === 'BOOK') return overEntity ? 'pointer' : 'default';
       if (!overHandle && !overEntity) return 'default';
+      // 3D selects but never moves. Promising a grab here is how someone ends up dragging
+      // a chair around a picture of a room and concluding the editor is broken.
+      if (state.view === '3D') return 'pointer';
       // Selecting is allowed on a published layout even though moving is not, so the
       // cursor promises a click, not a drag.
       return state.editable ? 'grab' : 'pointer';

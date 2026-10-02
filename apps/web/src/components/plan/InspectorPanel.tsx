@@ -55,6 +55,7 @@ function Shell({
   locked?: boolean;
   children: React.ReactNode;
 }) {
+  const view = useEditorStore((s) => s.view);
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-start gap-2 border-b px-4 py-3">
@@ -76,6 +77,15 @@ function Shell({
         )}
       </div>
       <div className="flex-1 space-y-5 overflow-y-auto p-4">
+        {!locked && view === '3D' && (
+          // 3D renders the same scene and selects from it, so the only thing that tells
+          // you editing is half off is that nothing moves when you drag. Say it instead.
+          <p className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+            3D is for reviewing. Dragging is off here — switch to{' '}
+            <span className="font-medium text-foreground">2D</span> to move things, or type
+            a position below.
+          </p>
+        )}
         {locked && (
           // Without this the fields are simply greyed out, which reads as "broken" rather
           // than "published". The canvas refuses to drag for the same reason, and that
@@ -317,6 +327,7 @@ function SeatInspector({ canEdit }: { canEdit: boolean }) {
   const scene = useEditorStore((s) => s.scene)!;
   const selection = useEditorStore((s) => s.selection)!;
   const clearSeatOverride = useEditorStore((s) => s.clearSeatOverride);
+  const moveEntity = useEditorStore((s) => s.moveEntity);
   const deleteSelected = useEditorStore((s) => s.deleteSelected);
 
   const seat = scene.seats.find((s) => s.id === selection.id);
@@ -327,10 +338,17 @@ function SeatInspector({ canEdit }: { canEdit: boolean }) {
       icon={<Armchair className="size-4" />}
       title={`Seat ${seat.code}`}
       subtitle={seat.override ? 'Pinned where you put it' : 'Placed by the table rule'}
+      locked={!canEdit}
       onDelete={canEdit ? deleteSelected : undefined}
     >
+      <PositionFields
+        x={seat.localTransform.x}
+        y={seat.localTransform.y}
+        disabled={!canEdit}
+        onChange={(x, y) => moveEntity(selection, x, y, false)}
+      />
+
       <div className="space-y-2">
-        <Stat label="Position on the table" value={`${seat.localTransform.x.toFixed(2)}, ${seat.localTransform.y.toFixed(2)} m`} />
         <Stat label="Facing" value={`${Math.round((seat.localTransform.rot * 180) / Math.PI)}°`} />
         <Stat label="Index" value={seat.seatIndex} />
       </div>
